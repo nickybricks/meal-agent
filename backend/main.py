@@ -1,0 +1,227 @@
+"""
+main.py — FastAPI application entry point.
+
+Builds the LangGraph agent once at startup and serves all API routes.
+"""
+
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+
+import database
+import agent as agent_module
+from model_router import list_available_models
+from schemas import (
+    ChatRequest, ChatResponse,
+    EditRequest,
+    FeedbackRequest,
+    UserProfile,
+    ModelListResponse, ModelInfo,
+    HistoryMessage, HistoryResponse,
+)
+
+_graph = None
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    global _graph
+    _graph = agent_module.build_graph()
+    yield
+
+
+app = FastAPI(title="Recipe Agent API", lifespan=lifespan)
+
+# Allow localhost + private LAN ranges (RFC1918) on any port so an iPhone
+# or other device on the same network can hit the dev server.
+_LAN_ORIGIN_REGEX = (
+    r"^http://("
+    r"localhost"
+    r"|127\.0\.0\.1"
+    r"|10\.\d{1,3}\.\d{1,3}\.\d{1,3}"
+    r"|192\.168\.\d{1,3}\.\d{1,3}"
+    r"|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}"
+    r")(:\d+)?$"
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=_LAN_ORIGIN_REGEX,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+def _extract_reply(messages: list) -> str:
+    for msg in reversed(messages):
+        if hasattr(msg, "content") and not getattr(msg, "tool_calls", None):
+            return msg.content if isinstance(msg.content, str) else str(msg.content)
+    return ""
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
+@app.get("/models", response_model=ModelListResponse)
+def get_models():
+    models = list_available_models()
+    return ModelListResponse(models=[ModelInfo(**m) for m in models])
+
+
+@app.post("/chat", response_model=ChatResponse)
+async def chat(req: ChatRequest):
+    config = {"configurable": {"thread_id": f"{req.user_id}:{req.session_id}"}}
+
+    state_input = {
+        "messages": [{"role": "user", "content": req.message}],
+        "user_id": req.user_id,
+        "session_id": req.session_id,
+        "user_profile": {},
+        "model_name": req.model,
+        "temperature": req.temperature,
+        "top_p": req.top_p,
+        "max_tokens": req.max_tokens,
+        "personality": req.personality,
+        "enabled_tools": req.enabled_tools,
+        "current_recipe": None,
+        "feedback_history": [],
+        "checkpoint_id": "",
+    }
+
+    try:
+        result = await agent_module.run_graph(_graph, state_input, config)
+    except Exception as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Agent run failed: {e.__class__.__name__}. Please try again.",
+        )
+
+    reply = _extract_reply(result.get("messages", []))
+    checkpoint_id = result.get("checkpoint_id", "")
+    tokens = result.get("tokens_used")
+
+    try:
+        database.save_chat_message(req.user_id, req.session_id, "user", req.message,
+                                   model_used=req.model)
+        database.save_chat_message(req.user_id, req.session_id, "assistant", reply,
+                                   checkpoint_id=checkpoint_id, model_used=req.model,
+                                   tokens_used=tokens)
+    except Exception:
+        pass  # Non-fatal — the reply still goes back to the user
+
+    return ChatResponse(
+        reply=reply,
+        checkpoint_id=checkpoint_id,
+        tokens_used=tokens,
+        model_used=req.model,
+    )
+
+
+@app.post("/edit", response_model=ChatResponse)
+async def edit(req: EditRequest):
+    config = {"configurable": {"thread_id": f"{req.user_id}:{req.session_id}"}}
+
+    overrides = {
+        "model_name": req.model,
+        "temperature": req.temperature,
+        "top_p": req.top_p,
+        "max_tokens": req.max_tokens,
+    }
+
+    try:
+        result = await agent_module.rewind_and_run(
+            _graph, req.checkpoint_id, req.new_message, config, overrides=overrides,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Edit re-run failed: {e.__class__.__name__}. Please try again.",
+        )
+
+    reply = _extract_reply(result.get("messages", []))
+    checkpoint_id = result.get("checkpoint_id", "")
+    tokens = result.get("tokens_used")
+
+    try:
+        database.save_chat_message(req.user_id, req.session_id, "user", req.new_message,
+                                   model_used=req.model)
+        database.save_chat_message(req.user_id, req.session_id, "assistant", reply,
+                                   checkpoint_id=checkpoint_id, model_used=req.model,
+                                   tokens_used=tokens)
+    except Exception:
+        pass  # Non-fatal
+
+    return ChatResponse(
+        reply=reply,
+        checkpoint_id=checkpoint_id,
+        tokens_used=tokens,
+        model_used=req.model,
+    )
+
+
+@app.post("/feedback")
+def feedback(req: FeedbackRequest):
+    try:
+        database.save_feedback(
+            user_id=req.user_id,
+            recipe_name=req.recipe_name,
+            rating=req.rating,
+            ingredients=req.ingredients,
+            cuisine=req.cuisine,
+            model_used=req.model_used,
+        )
+    except Exception:
+        raise HTTPException(
+            status_code=503,
+            detail="Couldn't save your feedback right now. Please try again.",
+        )
+    return {"status": "ok"}
+
+
+@app.get("/users/{user_id}", response_model=UserProfile)
+def get_user(user_id: str):
+    try:
+        user = database.get_user(user_id)
+    except Exception:
+        raise HTTPException(status_code=503, detail="Couldn't load user profile.")
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    try:
+        prefs = database.get_preferences(user_id)
+    except Exception:
+        raise HTTPException(status_code=503, detail="Couldn't load preferences.")
+    return UserProfile(
+        id=str(user["id"]),
+        name=user.get("name", ""),
+        dietary_restrictions=prefs.get("dietary_restrictions") or [],
+        disliked_ingredients=prefs.get("disliked_ingredients") or [],
+        favorite_cuisines=prefs.get("favorite_cuisines") or [],
+        personality=prefs.get("personality") or "friendly",
+    )
+
+
+@app.get("/history/{session_id}", response_model=HistoryResponse)
+def get_history(session_id: str):
+    try:
+        rows = database.get_chat_history(session_id)
+    except Exception:
+        raise HTTPException(status_code=503, detail="Couldn't load chat history.")
+    messages = [
+        HistoryMessage(
+            id=str(row["id"]),
+            role=row["role"],
+            content=row["content"],
+            checkpoint_id=row.get("checkpoint_id"),
+            model_used=row.get("model_used"),
+            tokens_used=row.get("tokens_used"),
+            created_at=str(row["created_at"]),
+        )
+        for row in rows
+    ]
+    return HistoryResponse(session_id=session_id, messages=messages)
