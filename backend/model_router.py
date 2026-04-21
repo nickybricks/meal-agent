@@ -26,7 +26,7 @@ def get_llm(
                 model=model_name,
                 temperature=temperature,
                 max_tokens=max_tokens,
-                model_kwargs={"top_p": top_p},
+                top_p=top_p,
                 api_key=api_key or os.environ.get("OPENAI_API_KEY"),
             )
 

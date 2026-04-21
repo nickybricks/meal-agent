@@ -8,8 +8,8 @@ Models defined here:
 - EditRequest: POST /edit — checkpoint_id, new_message, user_id, model, temperature
 - FeedbackRequest: POST /feedback — user_id, recipe_name, rating, ingredients, cuisine,
                                     model_used
-- UserProfile: GET /users/{id} response — id, name, dietary_restrictions,
-               disliked_ingredients, favorite_cuisines, personality
+- UserProfile: GET /users/{id} response — id, name, diet,
+               disliked_ingredients, favorite_cuisines
 - ModelListResponse: GET /models — cloud models + detected local Ollama models
 - HistoryMessage: single message in GET /history/{session_id}
 - HistoryResponse: list of HistoryMessage
@@ -71,10 +71,18 @@ class FeedbackRequest(BaseModel):
 class UserProfile(BaseModel):
     id: str
     name: str
-    dietary_restrictions: list[str] = []
+    diet: list[str] = []
     disliked_ingredients: list[str] = []
     favorite_cuisines: list[str] = []
-    personality: str = "friendly"
+
+
+class UserSummary(BaseModel):
+    id: str
+    name: str
+
+
+class UserListResponse(BaseModel):
+    users: list[UserSummary]
 
 
 class ModelInfo(BaseModel):
@@ -100,3 +108,13 @@ class HistoryMessage(BaseModel):
 class HistoryResponse(BaseModel):
     session_id: str
     messages: list[HistoryMessage]
+
+
+class SessionSummary(BaseModel):
+    session_id: str
+    title: str
+    last_at: str
+
+
+class SessionListResponse(BaseModel):
+    sessions: list[SessionSummary]

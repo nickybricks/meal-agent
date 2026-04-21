@@ -63,7 +63,7 @@ def build_system_prompt(
     base = PERSONALITY_PROMPTS.get(personality, PERSONALITY_PROMPTS["friendly"])
 
     name = user_profile.get("name", "the user")
-    dietary = user_profile.get("dietary_restrictions") or []
+    diet = user_profile.get("diet") or []
     disliked_ingredients = user_profile.get("disliked_ingredients") or []
     favorite_cuisines = user_profile.get("favorite_cuisines") or []
 
@@ -74,8 +74,8 @@ def build_system_prompt(
         f"\nYou are assisting {name}.",
     ]
 
-    if dietary:
-        lines.append(f"Dietary restrictions: {', '.join(dietary)}.")
+    if diet:
+        lines.append(f"Diet: {', '.join(diet)}.")
     if favorite_cuisines:
         lines.append(f"Favourite cuisines: {', '.join(favorite_cuisines)}.")
 
@@ -91,5 +91,11 @@ def build_system_prompt(
         lines.append(f"Cuisines they enjoy: {', '.join(signals['liked_cuisines'])}.")
 
     lines.append("\nAlways personalise suggestions based on these preferences.")
+    lines.append(
+        "When the user shares a new preference, diet, allergy, "
+        "cuisine they like, or an ingredient they dislike, call the "
+        "save_preference tool immediately to persist it. Use fields: "
+        "diet, disliked_ingredients, favorite_cuisines."
+    )
 
     return "\n".join(lines)

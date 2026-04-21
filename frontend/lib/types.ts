@@ -54,10 +54,9 @@ export interface FeedbackRequest {
 export interface UserProfile {
   id: string;
   name: string;
-  dietaryRestrictions: string[];
+  diet: string[];
   dislikedIngredients: string[];
   favoriteCuisines: string[];
-  personality: "friendly" | "professional" | "concise";
 }
 
 export interface ModelInfo {
@@ -73,3 +72,9 @@ export interface MealPlanDay {
 }
 
 export type Personality = "friendly" | "professional" | "concise";
+
+export interface SessionSummary {
+  sessionId: string;
+  title: string;
+  lastAt: string;
+}
