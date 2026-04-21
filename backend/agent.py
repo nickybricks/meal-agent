@@ -11,7 +11,7 @@ Public API:
 
 import json
 import uuid
-from typing import TypedDict, Annotated, Literal, Any
+from typing import TypedDict, Annotated, Literal
 
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, AIMessage
 from langchain_core.runnables import RunnableConfig
@@ -38,9 +38,8 @@ class AgentState(TypedDict):
     enabled_tools: list[str]
     current_recipe: dict | None
     feedback_history: list[dict]
-    checkpoint_id: str
+    last_checkpoint_id: str
     session_id: str
-    llm: Any  # per-request LLM instance — read by tools via InjectedState
 
 
 # ---------------------------------------------------------------------------
@@ -95,26 +94,18 @@ def process_query(state: AgentState) -> dict:
             content=f"Sorry, the model call failed ({e.__class__.__name__}). Please try again."
         )
 
-    # Make the LLM available to tools via InjectedState
-    return {"messages": [response], "llm": llm}
+    return {"messages": [response]}
 
 
-def _should_use_tools(state: AgentState) -> Literal["execute_tools", "generate_response"]:
+def _should_use_tools(state: AgentState) -> Literal["execute_tools", "save_checkpoint"]:
     last = state["messages"][-1]
     if hasattr(last, "tool_calls") and last.tool_calls:
         return "execute_tools"
-    return "generate_response"
+    return "save_checkpoint"
 
 
 def generate_response(state: AgentState) -> dict:
-    """
-    Synthesise a final reply after tool execution.
-    If last message is already an AIMessage without tool calls, pass through.
-    """
-    last = state["messages"][-1]
-    if isinstance(last, AIMessage) and not getattr(last, "tool_calls", None):
-        return {}
-
+    """Synthesise a final reply after tool execution."""
     llm = get_llm(
         state["model_name"],
         temperature=state["temperature"],
@@ -161,7 +152,7 @@ def save_checkpoint_node(state: AgentState, config: RunnableConfig) -> dict:
     except Exception:
         pass  # Non-fatal — checkpoint is still in MemorySaver
 
-    return {"checkpoint_id": checkpoint_id}
+    return {"last_checkpoint_id": checkpoint_id}
 
 
 # ---------------------------------------------------------------------------
@@ -185,7 +176,7 @@ def build_graph():
     builder.add_conditional_edges(
         "process_query",
         _should_use_tools,
-        {"execute_tools": "execute_tools", "generate_response": "generate_response"},
+        {"execute_tools": "execute_tools", "save_checkpoint": "save_checkpoint"},
     )
     builder.add_edge("execute_tools", "generate_response")
     builder.add_edge("generate_response", "save_checkpoint")
@@ -201,6 +192,16 @@ def build_graph():
 
 async def run_graph(graph, state_input: dict, config: dict) -> AgentState:
     result = await graph.ainvoke(state_input, config)
+    # Overwrite last_checkpoint_id with the real LangGraph checkpoint ID so
+    # /edit can find it in the thread history (the node-generated UUID isn't
+    # the same identifier MemorySaver indexes by).
+    try:
+        snapshot = await graph.aget_state(config)
+        real_id = snapshot.config.get("configurable", {}).get("checkpoint_id")
+        if real_id:
+            result = {**result, "last_checkpoint_id": real_id}
+    except Exception:
+        pass
     return result
 
 

@@ -9,6 +9,8 @@ A conversational AI agent that acts as a personal chef assistant for daily meal 
 - **Stateful agent** — LangGraph graph with checkpoints; edit any past prompt to rewind and rerun
 - **Feedback loop** — thumbs up/down on recipes; preferences are stored and injected into future runs
 - **Multi-user** — per-user preferences, feedback, and chat history
+- **Session list** — sidebar shows recent chat sessions; switch or start new sessions
+- **Persistent settings** — model, personality, and tool toggles survive page reloads via localStorage
 - **Personality toggle** — Friendly / Professional / Concise
 - **Recipe lookups** — TheMealDB integration (free, no key required)
 - **Tracing** — every run traced through LangSmith
@@ -111,12 +113,16 @@ Frontend runs on `http://localhost:3000`.
 
 | Method | Path                   | Purpose                              |
 | ------ | ---------------------- | ------------------------------------ |
-| GET    | `/models`              | List available models (cloud + Ollama) |
-| POST   | `/chat`                | Start or continue a LangGraph run    |
-| POST   | `/edit`                | Rerun from a checkpoint after edit   |
-| POST   | `/feedback`            | Store thumbs up/down                 |
-| GET    | `/users/{id}`          | Fetch profile/preferences            |
-| GET    | `/history/{session_id}` | Chat history                        |
+| Method | Path                      | Purpose                              |
+| ------ | ------------------------- | ------------------------------------ |
+| GET    | `/models`                 | List available models (cloud + Ollama) |
+| POST   | `/chat`                   | Start or continue a LangGraph run    |
+| POST   | `/edit`                   | Rerun from a checkpoint after edit   |
+| POST   | `/feedback`               | Store thumbs up/down                 |
+| GET    | `/users`                  | List all users                       |
+| GET    | `/users/{id}`             | Fetch profile/preferences            |
+| GET    | `/sessions/{user_id}`     | List chat sessions for a user        |
+| GET    | `/history/{session_id}`   | Chat history                         |
 
 ## License
 

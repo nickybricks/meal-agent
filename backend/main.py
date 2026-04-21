@@ -6,6 +6,9 @@ Builds the LangGraph agent once at startup and serves all API routes.
 
 from contextlib import asynccontextmanager
 
+from dotenv import load_dotenv
+load_dotenv(override=True)
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -17,11 +20,26 @@ from schemas import (
     EditRequest,
     FeedbackRequest,
     UserProfile,
+    UserSummary, UserListResponse,
     ModelListResponse, ModelInfo,
     HistoryMessage, HistoryResponse,
+    SessionSummary, SessionListResponse,
 )
 
 _graph = None
+
+
+def _as_str_list(value) -> list[str]:
+    """Coerce a preferences field from Supabase to a clean list of strings.
+
+    Guards against legacy/corrupt rows where a value was stored as a string
+    (e.g. a JSON-encoded list) instead of a Postgres array.
+    """
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(v) for v in value if v is not None]
+    return []
 
 
 @asynccontextmanager
@@ -89,7 +107,7 @@ async def chat(req: ChatRequest):
         "enabled_tools": req.enabled_tools,
         "current_recipe": None,
         "feedback_history": [],
-        "checkpoint_id": "",
+        "last_checkpoint_id": "",
     }
 
     try:
@@ -101,7 +119,7 @@ async def chat(req: ChatRequest):
         )
 
     reply = _extract_reply(result.get("messages", []))
-    checkpoint_id = result.get("checkpoint_id", "")
+    checkpoint_id = result.get("last_checkpoint_id", "")
     tokens = result.get("tokens_used")
 
     try:
@@ -110,8 +128,10 @@ async def chat(req: ChatRequest):
         database.save_chat_message(req.user_id, req.session_id, "assistant", reply,
                                    checkpoint_id=checkpoint_id, model_used=req.model,
                                    tokens_used=tokens)
-    except Exception:
-        pass  # Non-fatal — the reply still goes back to the user
+    except Exception as e:
+        # Non-fatal — the reply still goes back to the user, but log so the
+        # dev can see when Supabase is misconfigured or tables are missing.
+        print(f"[chat] save_chat_message failed: {e.__class__.__name__}: {e}")
 
     return ChatResponse(
         reply=reply,
@@ -145,7 +165,7 @@ async def edit(req: EditRequest):
         )
 
     reply = _extract_reply(result.get("messages", []))
-    checkpoint_id = result.get("checkpoint_id", "")
+    checkpoint_id = result.get("last_checkpoint_id", "")
     tokens = result.get("tokens_used")
 
     try:
@@ -154,8 +174,8 @@ async def edit(req: EditRequest):
         database.save_chat_message(req.user_id, req.session_id, "assistant", reply,
                                    checkpoint_id=checkpoint_id, model_used=req.model,
                                    tokens_used=tokens)
-    except Exception:
-        pass  # Non-fatal
+    except Exception as e:
+        print(f"[edit] save_chat_message failed: {e.__class__.__name__}: {e}")
 
     return ChatResponse(
         reply=reply,
@@ -184,6 +204,17 @@ def feedback(req: FeedbackRequest):
     return {"status": "ok"}
 
 
+@app.get("/users", response_model=UserListResponse)
+def list_users():
+    try:
+        rows = database.list_users()
+    except Exception:
+        raise HTTPException(status_code=503, detail="Couldn't list users.")
+    return UserListResponse(
+        users=[UserSummary(id=str(r["id"]), name=r.get("name", "")) for r in rows]
+    )
+
+
 @app.get("/users/{user_id}", response_model=UserProfile)
 def get_user(user_id: str):
     try:
@@ -199,10 +230,27 @@ def get_user(user_id: str):
     return UserProfile(
         id=str(user["id"]),
         name=user.get("name", ""),
-        dietary_restrictions=prefs.get("dietary_restrictions") or [],
-        disliked_ingredients=prefs.get("disliked_ingredients") or [],
-        favorite_cuisines=prefs.get("favorite_cuisines") or [],
-        personality=prefs.get("personality") or "friendly",
+        diet=_as_str_list(prefs.get("diet")),
+        disliked_ingredients=_as_str_list(prefs.get("disliked_ingredients")),
+        favorite_cuisines=_as_str_list(prefs.get("favorite_cuisines")),
+    )
+
+
+@app.get("/sessions/{user_id}", response_model=SessionListResponse)
+def list_sessions(user_id: str):
+    try:
+        rows = database.list_sessions(user_id)
+    except Exception:
+        raise HTTPException(status_code=503, detail="Couldn't load sessions.")
+    return SessionListResponse(
+        sessions=[
+            SessionSummary(
+                session_id=str(r["session_id"]),
+                title=r.get("title") or "",
+                last_at=str(r["last_at"]),
+            )
+            for r in rows
+        ]
     )
 
 

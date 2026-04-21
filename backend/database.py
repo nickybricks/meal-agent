@@ -32,10 +32,9 @@ def get_preferences(user_id: str) -> dict:
     if rows:
         return rows[0]
     return {
-        "dietary_restrictions": [],
+        "diet": [],
         "disliked_ingredients": [],
         "favorite_cuisines": [],
-        "personality": "friendly",
     }
 
 
@@ -100,6 +99,38 @@ def get_chat_history(session_id: str) -> list[dict]:
         .execute()
     )
     return resp.data or []
+
+
+def list_sessions(user_id: str, limit: int = 20) -> list[dict]:
+    """Return recent sessions for a user as [{session_id, title, last_at}].
+
+    Title is the first user message in the session; last_at is the newest
+    message timestamp. Sorted newest-first.
+    """
+    resp = (
+        get_client()
+        .table("chat_history")
+        .select("session_id, role, content, created_at")
+        .eq("user_id", user_id)
+        .order("created_at", desc=False)
+        .execute()
+    )
+    rows = resp.data or []
+    sessions: dict[str, dict] = {}
+    for r in rows:
+        sid = r.get("session_id")
+        if not sid:
+            continue
+        entry = sessions.get(sid)
+        if entry is None:
+            entry = {"session_id": sid, "title": "", "last_at": r["created_at"]}
+            sessions[sid] = entry
+        if not entry["title"] and r.get("role") == "user":
+            entry["title"] = (r.get("content") or "").strip()
+        if r["created_at"] > entry["last_at"]:
+            entry["last_at"] = r["created_at"]
+    ordered = sorted(sessions.values(), key=lambda s: s["last_at"], reverse=True)
+    return ordered[:limit]
 
 
 def save_checkpoint(
