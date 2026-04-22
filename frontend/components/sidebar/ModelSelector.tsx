@@ -1,7 +1,3 @@
-/**
- * ModelSelector.tsx — Dropdown to choose the active LLM model.
- */
-
 "use client";
 
 import type { ModelInfo } from "@/lib/types";
@@ -32,10 +28,10 @@ export default function ModelSelector({
   }
 
   return (
-    <label className="flex flex-col gap-1 text-xs text-neutral-500">
+    <label className="flex flex-col gap-1 text-xs text-on-surface-variant">
       Model
       <select
-        className="rounded border border-neutral-300 bg-white px-2 py-1 text-sm text-neutral-900"
+        className="rounded-full bg-surface-container-highest px-3 py-1.5 text-sm text-on-surface outline-none"
         value={selectedModel}
         onChange={(e) => onChange(e.target.value)}
       >

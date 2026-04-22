@@ -1,7 +1,3 @@
-/**
- * FeedbackButtons.tsx — Thumbs up / thumbs down row shown below assistant messages.
- */
-
 "use client";
 
 import { useState } from "react";
@@ -20,19 +16,18 @@ export default function FeedbackButtons({ checkpointId, onFeedback }: Props) {
     onFeedback(checkpointId, rating);
   };
 
-  const base =
-    "rounded px-2 py-1 text-xs transition disabled:opacity-60";
+  const base = "rounded-full px-3 py-1 text-xs transition disabled:opacity-60";
   const up =
     submitted === 5
-      ? "bg-green-100 text-green-800"
-      : "bg-neutral-100 hover:bg-neutral-200 text-neutral-700";
+      ? "bg-primary-container text-on-surface"
+      : "bg-surface-container hover:bg-surface-container-high text-on-surface-variant";
   const down =
     submitted === 1
-      ? "bg-red-100 text-red-800"
-      : "bg-neutral-100 hover:bg-neutral-200 text-neutral-700";
+      ? "bg-error-container text-brand-error"
+      : "bg-surface-container hover:bg-surface-container-high text-on-surface-variant";
 
   return (
-    <div className="mt-1 flex gap-1">
+    <div className="mt-2 flex gap-1.5">
       <button
         type="button"
         className={`${base} ${up}`}

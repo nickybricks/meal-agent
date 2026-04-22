@@ -10,7 +10,7 @@
 import { useEffect, useState } from "react";
 
 export const STORAGE_KEYS = {
-  userId: "recipe_agent.user_id",
+  homeId: "recipe_agent.home_id",
   sessionId: "recipe_agent.session_id",
   model: "recipe_agent.model",
   personality: "recipe_agent.personality",
@@ -22,6 +22,8 @@ export const STORAGE_KEYS = {
   apiKeyAnthropic: "recipe_agent.api_key.anthropic",
   apiKeyGoogle: "recipe_agent.api_key.google",
   apiKeyLangSmith: "recipe_agent.api_key.langsmith",
+  preferLocal: "recipe_agent.prefer_local",
+  pendingRequests: "recipe_agent.pending_requests",
 } as const;
 
 export function readJSON<T>(key: string, fallback: T): T {

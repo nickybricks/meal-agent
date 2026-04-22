@@ -76,7 +76,6 @@ A conversational AI agent that acts as a personal chef assistant for daily meal 
 - **Agent Framework:** LangGraph (stateful graph with checkpoints)
 - **Database:** Supabase (Postgres - cloud-synced)
 - **Observability:** LangSmith (tracing every run)
-- **Recipe API:** TheMealDB (free, no key required)
 
 ## Directory Layout
 ```
@@ -101,7 +100,7 @@ recipe-agent/
 │   ├── main.py              # FastAPI routes
 │   ├── agent.py             # LangGraph graph
 │   ├── model_router.py      # Model factory
-│   ├── tools.py             # 5 agent tools
+│   ├── tools.py             # 4 agent tools
 │   ├── memory.py            # Memory system
 │   ├── database.py          # Supabase queries
 │   ├── config.py            # Model configs
@@ -129,12 +128,11 @@ recipe-agent/
 ### Local (Ollama)
 - `llama3.2:3b`, `llama3.2:8b`, `mistral:7b`, `gemma3:4b`, `phi4:14b`, `deepseek-r1:8b`, `qwen2.5:7b`
 
-## Agent Tools (5 total, each toggleable in settings)
-1. `search_recipes` - TheMealDB API lookup
-2. `get_user_profile` - Load preferences from Supabase
-3. `save_preference` - Save feedback to Supabase
-4. `substitute_ingredient` - LLM-powered ingredient swaps
-5. `generate_meal_plan` - Weekly plan via LLM + TheMealDB
+## Agent Tools (4 total, each toggleable in settings)
+1. `get_user_profile` - Load preferences from Supabase
+2. `save_preference` - Save feedback to Supabase
+3. `substitute_ingredient` - LLM-powered ingredient swaps
+4. `generate_meal_plan` - Weekly plan via LLM
 
 ## Key Features
 - **Edit Prompt / Rewind:** User can edit any previous message -> backend rewinds to that LangGraph checkpoint and reruns
@@ -168,7 +166,6 @@ OLLAMA_HOST=http://localhost:11434
 - Always use TypeScript for frontend code
 - Use Pydantic models for all API request/response schemas
 - Handle Ollama connection failures gracefully (it may not be running)
-- TheMealDB base URL: `https://themealdb.com/api/json/v1/1/`
 
 ## Release Workflow
 

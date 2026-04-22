@@ -1,7 +1,3 @@
-/**
- * ToolToggle.tsx — Enable/disable individual agent tools.
- */
-
 "use client";
 
 interface Props {
@@ -10,11 +6,6 @@ interface Props {
 }
 
 const TOOLS: { key: string; label: string; description: string }[] = [
-  {
-    key: "search_recipes",
-    label: "search_recipes",
-    description: "Look up recipes on TheMealDB by ingredient, cuisine, or name.",
-  },
   {
     key: "get_user_profile",
     label: "get_user_profile",
@@ -33,7 +24,7 @@ const TOOLS: { key: string; label: string; description: string }[] = [
   {
     key: "generate_meal_plan",
     label: "generate_meal_plan",
-    description: "Build a multi-day meal plan using the LLM + TheMealDB.",
+    description: "Build a multi-day meal plan using the LLM.",
   },
 ];
 
@@ -54,7 +45,7 @@ export default function ToolToggle({ enabledTools, onChange }: Props) {
         return (
           <label
             key={t.key}
-            className="flex cursor-pointer items-start gap-3 rounded border border-neutral-200 p-2 hover:bg-neutral-50"
+            className="flex cursor-pointer items-start gap-3 rounded-card bg-surface-container p-3 hover:bg-surface-container-high"
           >
             <input
               type="checkbox"
@@ -63,8 +54,8 @@ export default function ToolToggle({ enabledTools, onChange }: Props) {
               className="mt-1"
             />
             <div>
-              <div className="text-sm font-medium text-neutral-900">{t.label}</div>
-              <div className="text-xs text-neutral-600">{t.description}</div>
+              <div className="text-sm font-medium text-on-surface">{t.label}</div>
+              <div className="text-xs text-on-surface-variant">{t.description}</div>
             </div>
           </label>
         );
