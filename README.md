@@ -12,6 +12,7 @@ A conversational AI agent that acts as a personal chef assistant for daily meal 
 - **Session list** — sidebar shows recent chat sessions; switch or start new sessions
 - **Persistent settings** — model, personality, and tool toggles survive page reloads via localStorage
 - **Personality toggle** — Friendly / Professional / Concise
+- **Meal plan canvas** — weekly meal planner; click any recipe card to view the full recipe (ingredients, steps, nutrition)
 - **Tracing** — every run traced through LangSmith
 
 ## Tech Stack

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import ReactMarkdown from "react-markdown";
 import {
   addMealPlanEntry,
   deleteMealPlanEntry,
@@ -19,6 +20,17 @@ const SLOTS: { key: MealSlot; label: string; emoji: string }[] = [
   { key: "lunch", label: "Lunch", emoji: "🍴" },
   { key: "dinner", label: "Dinner", emoji: "🍽️" },
 ];
+
+const MD_COMPONENTS = {
+  p: ({ children }: { children?: React.ReactNode }) => <p className="mb-2 last:mb-0">{children}</p>,
+  h1: ({ children }: { children?: React.ReactNode }) => <h1 className="mt-4 mb-1 font-bold text-lg">{children}</h1>,
+  h2: ({ children }: { children?: React.ReactNode }) => <h2 className="mt-3 mb-2 font-semibold text-base">{children}</h2>,
+  h3: ({ children }: { children?: React.ReactNode }) => <h3 className="mt-3 mb-1 font-semibold">{children}</h3>,
+  ul: ({ children }: { children?: React.ReactNode }) => <ul className="mt-1 mb-2 list-disc pl-5">{children}</ul>,
+  ol: ({ children }: { children?: React.ReactNode }) => <ol className="mt-1 mb-2 list-decimal pl-5">{children}</ol>,
+  li: ({ children }: { children?: React.ReactNode }) => <li className="mb-0.5">{children}</li>,
+  strong: ({ children }: { children?: React.ReactNode }) => <strong className="font-semibold">{children}</strong>,
+};
 
 function mondayOf(d: Date): Date {
   const day = d.getDay();
@@ -47,11 +59,27 @@ function parsePrepMinutes(content: string): number | null {
   return m ? parseInt(m[1], 10) : null;
 }
 
+function recipeToMarkdown(r: SavedRecipe): string {
+  const lines = [
+    `**${r.name}**`,
+    r.description,
+    `Servings: ${r.servings} | Prep: ${r.prepTimeMinutes} min | Cook: ${r.cookTimeMinutes} min`,
+    "",
+    "**Ingredients**",
+    ...r.ingredients.map((ing) => `- ${ing.amount} ${ing.unit} ${ing.item}`),
+    "",
+    "**Steps**",
+    ...r.steps.map((s, i) => `${i + 1}. ${s}`),
+  ];
+  return lines.join("\n");
+}
+
 type AddTarget = { date: string; slot: MealSlot; dayAbbrev: string };
 
 export default function MealPlanPage() {
   const router = useRouter();
   const settings = useAppSettings();
+  const { newSession } = settings;
 
   const [weekStart, setWeekStart] = useState<Date>(() => mondayOf(new Date()));
   const [entries, setEntries] = useState<MealPlanEntry[]>([]);
@@ -68,6 +96,8 @@ export default function MealPlanPage() {
   const [savedRecipes, setSavedRecipes] = useState<SavedRecipe[]>([]);
   const [recipeSearch, setRecipeSearch] = useState("");
   const [isLoadingRecipes, setIsLoadingRecipes] = useState(false);
+
+  const [viewEntry, setViewEntry] = useState<MealPlanEntry | null>(null);
 
   const [undoEntry, setUndoEntry] = useState<MealPlanEntry | null>(null);
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -193,7 +223,7 @@ export default function MealPlanPage() {
         planDate: addTarget.date,
         slot: addTarget.slot,
         recipeName: recipe.name,
-        recipeContent: recipe.description || recipe.name,
+        recipeContent: recipeToMarkdown(recipe),
         overwrite: false,
       });
       setEntries((prev) => [...prev, entry]);
@@ -211,10 +241,9 @@ export default function MealPlanPage() {
   };
 
   const handleCreateWithAI = () => {
-    if (!addTarget) return;
-    const prompt = `Suggest a ${addTarget.slot} recipe for ${addTarget.dayAbbrev}`;
     setAddTarget(null);
-    router.push(`/?q=${encodeURIComponent(prompt)}`);
+    newSession();
+    router.push("/");
   };
 
   const filteredRecipes = useMemo(
@@ -336,8 +365,15 @@ export default function MealPlanPage() {
                 </div>
 
                 {entry ? (
-                  /* Filled recipe card */
-                  <div className="group relative rounded-card bg-surface-container-lowest shadow-card overflow-hidden">
+                  /* Filled recipe card — clickable to view recipe detail */
+                  <div
+                    className="group relative rounded-card bg-surface-container-lowest shadow-card overflow-hidden cursor-pointer"
+                    onClick={() => setViewEntry(entry)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => e.key === "Enter" && setViewEntry(entry)}
+                    aria-label={`View ${entry.recipeName}`}
+                  >
                     {/* Gradient image placeholder */}
                     <div
                       className="relative h-40 w-full"
@@ -356,7 +392,7 @@ export default function MealPlanPage() {
                     {/* Delete button — revealed on hover */}
                     <button
                       type="button"
-                      onClick={() => handleDelete(entry)}
+                      onClick={(e) => { e.stopPropagation(); handleDelete(entry); }}
                       className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-full bg-surface-container-high text-on-surface-variant opacity-0 transition-all group-hover:opacity-100 hover:!bg-brand-error hover:!text-white"
                       aria-label={`Remove ${entry.recipeName}`}
                     >
@@ -396,6 +432,44 @@ export default function MealPlanPage() {
           })}
         </div>
       </div>
+
+      {/* Recipe detail modal */}
+      {viewEntry && (
+        <div
+          className="fixed inset-0 z-40 flex items-center justify-center bg-on-surface/20 backdrop-blur-sm"
+          onClick={() => setViewEntry(null)}
+        >
+          <div
+            className="rounded-card bg-surface-container-lowest shadow-card w-full max-w-lg max-h-[85vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal header */}
+            <div
+              className="h-32 w-full rounded-t-card flex-shrink-0"
+              style={{ background: "linear-gradient(135deg, #297300 0%, #99f070 100%)" }}
+            />
+            <div className="flex items-start justify-between px-6 pt-4 pb-2 flex-shrink-0">
+              <h2 className="font-bold text-xl text-on-surface leading-snug pr-4">
+                {viewEntry.recipeName}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setViewEntry(null)}
+                className="flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-full bg-surface-container-high text-on-surface-variant hover:bg-surface-container-highest"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+            {/* Scrollable recipe content */}
+            <div className="overflow-y-auto px-6 pb-6 text-sm text-on-surface leading-relaxed">
+              <ReactMarkdown components={MD_COMPONENTS}>
+                {viewEntry.recipeContent}
+              </ReactMarkdown>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add-to-slot choice dialog */}
       {addTarget && !showRecipePicker && (
