@@ -80,11 +80,14 @@ _LAN_ORIGIN_REGEX = (
 )
 _env = (os.environ.get("ENV") or "dev").lower()
 _allowed = [o.strip() for o in (os.environ.get("ALLOWED_ORIGINS") or "").split(",") if o.strip()]
+# In prod, allow_credentials=True requires explicit origins (not "*").
+# Fall back to no credentials if no origins are configured.
+_use_credentials = bool(_allowed) or _env == "dev"
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_allowed or ["*"] if _env != "dev" else [],
+    allow_origins=_allowed if _env != "dev" else [],
     allow_origin_regex=_LAN_ORIGIN_REGEX if _env == "dev" else None,
-    allow_credentials=True,
+    allow_credentials=_use_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
