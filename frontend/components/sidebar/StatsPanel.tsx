@@ -1,7 +1,3 @@
-/**
- * StatsPanel.tsx — Session statistics shown at the bottom of the sidebar.
- */
-
 "use client";
 
 interface Props {
@@ -18,16 +14,16 @@ export default function StatsPanel({
   dislikeCount,
 }: Props) {
   const Item = ({ label, value }: { label: string; value: number }) => (
-    <div className="flex flex-col rounded bg-neutral-100 px-2 py-1">
-      <span className="text-[10px] uppercase tracking-wide text-neutral-500">
+    <div className="flex flex-col rounded-card bg-surface-container px-3 py-2">
+      <span className="text-[10px] uppercase tracking-wide text-on-surface-variant">
         {label}
       </span>
-      <span className="text-sm font-medium text-neutral-900">{value}</span>
+      <span className="text-sm font-medium text-on-surface">{value}</span>
     </div>
   );
 
   return (
-    <div className="grid grid-cols-2 gap-1">
+    <div className="grid grid-cols-2 gap-2">
       <Item label="Messages" value={messageCount} />
       <Item label="Tokens" value={totalTokens} />
       <Item label="Liked" value={likeCount} />

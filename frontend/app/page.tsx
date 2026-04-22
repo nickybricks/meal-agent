@@ -1,14 +1,12 @@
-/**
- * page.tsx — Main chat page (route: /).
- */
-
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { ChatMessage } from "@/lib/types";
-import { editMessage, getHistory, sendFeedback, sendMessage } from "@/lib/api";
+import type { ChatMessage, StructuredRecipe } from "@/lib/types";
+import { editMessage, getHistory, streamMessage } from "@/lib/api";
 import { useAppSettings } from "@/lib/app-context";
+import { useAuth } from "@/components/auth/AuthProvider";
 import ChatWindow from "@/components/chat/ChatWindow";
+import AddToMealPlanDialog from "@/components/chat/AddToMealPlanDialog";
 
 function newId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -19,17 +17,19 @@ function newId(): string {
 
 export default function ChatPage() {
   const settings = useAppSettings();
-  const { userId, sessionId, model, personality, temperature, topP, maxTokens, enabledTools, updateStats, stats } = settings;
+  const { homeId, sessionId, updateStats, stats } = settings;
+  const { me } = useAuth();
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [addToPlan, setAddToPlan] = useState<StructuredRecipe | null>(null);
 
-  // Load prior session history once a sessionId is available.
   useEffect(() => {
-    if (!sessionId) return;
+    if (!sessionId || !homeId) return;
     let cancelled = false;
-    getHistory(sessionId)
+    getHistory(sessionId, homeId)
       .then((loaded) => {
         if (!cancelled) {
           setMessages(loaded);
@@ -48,12 +48,16 @@ export default function ChatPage() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
+  }, [sessionId, homeId]);
 
   const handleSend = useCallback(
     async (text: string) => {
-      if (!userId) {
-        setError("Select a user in the sidebar first.");
+      if (!me) {
+        setError("Signing you in… one moment.");
+        return;
+      }
+      if (!homeId) {
+        setError("Select a home in the sidebar first.");
         return;
       }
       setError(null);
@@ -63,70 +67,57 @@ export default function ChatPage() {
         content: text,
         createdAt: new Date().toISOString(),
       };
-      setMessages((prev) => [...prev, userMsg]);
+      const assistantId = newId();
+      const assistantMsg: ChatMessage = {
+        id: assistantId,
+        role: "assistant",
+        content: "",
+        createdAt: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, userMsg, assistantMsg]);
       setIsLoading(true);
       try {
-        const res = await sendMessage({
-          userId,
-          sessionId,
-          message: text,
-          model,
-          temperature,
-          topP,
-          maxTokens,
-          enabledTools,
-          personality,
-        });
-        const assistantMsg: ChatMessage = {
-          id: newId(),
-          role: "assistant",
-          content: res.reply,
-          checkpointId: res.checkpointId,
-          modelUsed: res.modelUsed,
-          tokensUsed: res.tokensUsed,
-          createdAt: new Date().toISOString(),
-        };
-        setMessages((prev) => {
-          // Attach the checkpointId to the user message too so editing works.
-          const withCp = prev.map((m) =>
-            m.id === userMsg.id ? { ...m, checkpointId: res.checkpointId } : m,
-          );
-          return [...withCp, assistantMsg];
-        });
-        updateStats({
-          messageCount: stats.messageCount + 2,
-          totalTokens: stats.totalTokens + (res.tokensUsed ?? 0),
-        });
+        for await (const event of streamMessage({ homeId, sessionId, message: text })) {
+          if (event.type === "chunk") {
+            setIsStreaming(true);
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId ? { ...m, content: m.content + event.content } : m,
+              ),
+            );
+          } else if (event.type === "done") {
+            setMessages((prev) =>
+              prev.map((m) => {
+                if (m.id === userMsg.id) return { ...m, checkpointId: event.checkpointId };
+                if (m.id === assistantId)
+                  return {
+                    ...m,
+                    checkpointId: event.checkpointId,
+                    modelUsed: event.modelUsed,
+                    tokensUsed: event.tokensUsed,
+                    recipe: event.recipe,
+                  };
+                return m;
+              }),
+            );
+            updateStats({
+              messageCount: stats.messageCount + 2,
+              totalTokens: stats.totalTokens + (event.tokensUsed ?? 0),
+            });
+          } else if (event.type === "error") {
+            setError(event.message);
+            setMessages((prev) => prev.filter((m) => m.id !== assistantId));
+          }
+        }
       } catch (e) {
         setError(e instanceof Error ? e.message : "Request failed");
+        setMessages((prev) => prev.filter((m) => m.id !== assistantId));
       } finally {
         setIsLoading(false);
+        setIsStreaming(false);
       }
     },
-    [userId, sessionId, model, personality, temperature, topP, maxTokens, enabledTools, stats, updateStats],
-  );
-
-  const handleFeedback = useCallback(
-    async (checkpointId: string, rating: 1 | 5) => {
-      const msg = messages.find((m) => m.checkpointId === checkpointId);
-      if (!msg) return;
-      try {
-        await sendFeedback({
-          userId,
-          recipeName: msg.content.slice(0, 80),
-          rating,
-          modelUsed: msg.modelUsed,
-        });
-        updateStats(
-          rating === 5
-            ? { likeCount: stats.likeCount + 1 }
-            : { dislikeCount: stats.dislikeCount + 1 },
-        );
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Feedback failed");
-      }
-    },
-    [messages, userId, stats, updateStats],
+    [me, homeId, sessionId, stats, updateStats],
   );
 
   const handleEdit = useCallback(
@@ -137,10 +128,8 @@ export default function ChatPage() {
         const res = await editMessage({
           checkpointId,
           newMessage: newText,
-          userId,
+          homeId,
           sessionId,
-          model,
-          temperature,
         });
         setMessages((prev) => {
           const idx = prev.findIndex((m) => m.checkpointId === checkpointId && m.role === "user");
@@ -161,6 +150,7 @@ export default function ChatPage() {
               checkpointId: res.checkpointId,
               modelUsed: res.modelUsed,
               tokensUsed: res.tokensUsed,
+              recipe: res.recipe,
               createdAt: new Date().toISOString(),
             },
           ];
@@ -171,13 +161,13 @@ export default function ChatPage() {
         setIsLoading(false);
       }
     },
-    [userId, sessionId, model, temperature],
+    [homeId, sessionId],
   );
 
   return (
     <div className="flex h-full flex-col">
       {error && (
-        <div className="border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+        <div className="bg-error-container px-4 py-2 text-sm text-brand-error">
           {error}
         </div>
       )}
@@ -185,11 +175,20 @@ export default function ChatPage() {
         <ChatWindow
           messages={messages}
           isLoading={isLoading}
+          isStreaming={isStreaming}
           onSend={handleSend}
-          onFeedback={handleFeedback}
           onEdit={handleEdit}
+          onAddToMealPlan={(recipe) => setAddToPlan(recipe)}
         />
       </div>
+      {addToPlan !== null && (
+        <AddToMealPlanDialog
+          recipe={addToPlan}
+          sessionId={sessionId}
+          onClose={() => setAddToPlan(null)}
+          onSaved={() => setAddToPlan(null)}
+        />
+      )}
     </div>
   );
 }

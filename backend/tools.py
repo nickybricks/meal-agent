@@ -1,5 +1,5 @@
 """
-tools.py — The 5 LangChain @tool functions available to the LangGraph agent.
+tools.py — The 4 LangChain @tool functions available to the LangGraph agent.
 
 Each tool is decorated with @tool so LangGraph can bind them to the LLM.
 Use get_tools(enabled) to filter which tools are active for a given request.
@@ -11,14 +11,13 @@ read the per-request LLM from AgentState via InjectedState (no globals).
 import threading
 from typing import Annotated
 
-import httpx
 from langchain_core.tools import tool
 from langchain_core.messages import HumanMessage
 from langgraph.prebuilt import InjectedState
 
 import database
 import memory as mem
-from config import THEMEALDB_BASE_URL
+from schemas import RecipeIngredient
 
 MAX_MEAL_PLAN_DAYS = 14
 
@@ -41,59 +40,14 @@ def _state_llm(state: dict):
 
 
 # ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _format_recipe(meal: dict) -> str:
-    name = meal.get("strMeal", "Unknown")
-    area = meal.get("strArea", "")
-    category = meal.get("strCategory", "")
-    source = meal.get("strSource") or meal.get("strYoutube") or ""
-    ingredients = []
-    for i in range(1, 21):
-        ing = (meal.get(f"strIngredient{i}") or "").strip()
-        measure = (meal.get(f"strMeasure{i}") or "").strip()
-        if ing:
-            ingredients.append(f"{measure} {ing}".strip())
-    lines = [f"**{name}**"]
-    if area or category:
-        lines.append(f"Cuisine: {area} | Category: {category}")
-    if ingredients:
-        lines.append(f"Ingredients: {', '.join(ingredients[:10])}")
-    if source:
-        lines.append(f"Source: {source}")
-    return "\n".join(lines)
-
-
-# ---------------------------------------------------------------------------
 # Tools
 # ---------------------------------------------------------------------------
-
-@tool
-async def search_recipes(query: str, cuisine: str | None = None) -> str:
-    """Search TheMealDB for recipes matching query, optionally filtered by cuisine/area."""
-    url = f"{THEMEALDB_BASE_URL}/search.php"
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(url, params={"s": query})
-            resp.raise_for_status()
-            meals = resp.json().get("meals") or []
-    except httpx.HTTPError as e:
-        return f"Sorry, I couldn't reach the recipe database right now ({e.__class__.__name__})."
-
-    if cuisine:
-        meals = [m for m in meals if (m.get("strArea") or "").lower() == cuisine.lower()]
-
-    if not meals:
-        return f"No recipes found for '{query}'" + (f" in {cuisine} cuisine." if cuisine else ".")
-
-    return "\n\n".join(_format_recipe(m) for m in meals[:5])
-
 
 @tool
 def get_user_profile(state: Annotated[dict, InjectedState] = None) -> str:
     """Load the current user's preferences and feedback history from the database."""
     user_id = (state or {}).get("user_id", "")
+    home_id = (state or {}).get("home_id") or database.LEGACY_HOME_ID
     if not user_id:
         return "Sorry, I couldn't identify the current user."
 
@@ -106,8 +60,8 @@ def get_user_profile(state: Annotated[dict, InjectedState] = None) -> str:
         return f"No user found with id {user_id}."
 
     try:
-        prefs = database.get_preferences(user_id)
-        feedback = database.get_feedback_history(user_id, limit=20)
+        prefs = database.get_preferences(user_id, home_id)
+        feedback = database.get_feedback_history(user_id, home_id=home_id, limit=20)
     except Exception:
         return "Sorry, I couldn't load your preferences right now."
 
@@ -148,17 +102,18 @@ def save_preference(
         return f"Unknown field '{field}'. Must be one of: diet, disliked_ingredients, favorite_cuisines."
 
     user_id = (state or {}).get("user_id", "")
+    home_id = (state or {}).get("home_id") or database.LEGACY_HOME_ID
     if not user_id:
         return "Sorry, I couldn't identify the current user."
 
     with _pref_lock:
         try:
-            prefs = database.get_preferences(user_id)
+            prefs = database.get_preferences(user_id, home_id)
             existing = prefs.get(field)
             current: list[str] = [str(v) for v in existing if v is not None] if isinstance(existing, list) else []
             if value not in current:
                 current.append(value)
-            database.update_preference(user_id, field, current)
+            database.update_preference(user_id, field, current, home_id=home_id)
             return f"Added '{value}' to {field}."
         except Exception as e:
             print(f"[save_preference] failed: {e.__class__.__name__}: {e}")
@@ -198,35 +153,17 @@ async def generate_meal_plan(
         days = MAX_MEAL_PLAN_DAYS
 
     user_id = (state or {}).get("user_id", "")
+    home_id = (state or {}).get("home_id") or database.LEGACY_HOME_ID
     if not user_id:
         return "Sorry, I couldn't identify the current user."
 
     try:
-        prefs = database.get_preferences(user_id)
-        feedback = database.get_feedback_history(user_id, limit=30)
+        prefs = database.get_preferences(user_id, home_id)
+        feedback = database.get_feedback_history(user_id, home_id=home_id, limit=30)
     except Exception:
         return "Sorry, I couldn't load your preferences to build a meal plan."
 
     signals = mem.summarise_feedback(feedback)
-
-    recipes: list[dict] = []
-    seen: set[str] = set()
-    async with httpx.AsyncClient(timeout=5) as client:
-        for _ in range(days * 2):
-            try:
-                resp = await client.get(f"{THEMEALDB_BASE_URL}/random.php")
-                meal = (resp.json().get("meals") or [{}])[0]
-            except Exception:
-                break
-            name = meal.get("strMeal", "")
-            if name and name not in seen:
-                seen.add(name)
-                recipes.append(meal)
-
-    recipe_list = "\n".join(
-        f"- {m.get('strMeal')} ({m.get('strArea', '')} {m.get('strCategory', '')})"
-        for m in recipes[:days + 3]
-    )
 
     avoid = list({*(prefs.get("disliked_ingredients") or []), *signals["ingredients_to_avoid"]})
     diet = prefs.get("diet") or []
@@ -246,12 +183,11 @@ async def generate_meal_plan(
     constraint_text = "\n".join(constraints) if constraints else "No specific restrictions."
 
     prompt = (
-        f"Create a {days}-day meal plan using recipes from the list below.\n"
+        f"Create a {days}-day meal plan for the user.\n"
         f"User constraints:\n{constraint_text}\n\n"
-        f"Available recipes:\n{recipe_list}\n\n"
         f"Format as a markdown table with columns: Day | Breakfast idea | Lunch | Dinner. "
-        f"For lunch and dinner choose from the recipe list. "
-        f"For breakfast suggest a simple complementary option. "
+        f"Pick concrete, well-known dishes for lunch and dinner and a simple complementary option for breakfast. "
+        f"Vary cuisines and proteins across the week. "
         f"Respect all user constraints."
     )
 
@@ -263,8 +199,72 @@ async def generate_meal_plan(
     return response.content
 
 
-ALL_TOOLS = [search_recipes, get_user_profile, save_preference,
-             substitute_ingredient, generate_meal_plan]
+@tool
+def save_recipe(
+    name: str,
+    description: str,
+    servings: int,
+    prep_time_minutes: int,
+    cook_time_minutes: int,
+    calories_kcal: int,
+    protein_g: int,
+    carbs_g: int,
+    fat_g: int,
+    ingredients: list[RecipeIngredient] = None,
+    steps: list[str] = None,
+    cuisine: str = "",
+    tags: list[str] = None,
+    state: Annotated[dict, InjectedState] = None,
+) -> str:
+    """Save a single complete recipe to the user's recipe library.
+
+    Always include all fields:
+    - ingredients: list of {item, amount, unit} objects. Never leave empty — every recipe must have ingredients.
+    - calories_kcal, protein_g, carbs_g, fat_g: integer per-serving macros. Always estimate these — never pass 0 as a placeholder.
+    Call this only for one concrete recipe the user can cook — not for lists, meal plans, or substitution suggestions.
+    """
+    user_id = (state or {}).get("user_id", "")
+    home_id = (state or {}).get("home_id") or database.LEGACY_HOME_ID
+    session_id = (state or {}).get("session_id")
+    if not user_id:
+        return "Sorry, I couldn't identify the current user."
+    macros = {
+        "calories_kcal": calories_kcal,
+        "protein_g": protein_g,
+        "carbs_g": carbs_g,
+        "fat_g": fat_g,
+    }
+    ingredient_dicts = [
+        ing.model_dump() if isinstance(ing, RecipeIngredient) else ing
+        for ing in (ingredients or [])
+    ]
+    print(f"[save_recipe] name={name!r} ingredients={len(ingredient_dicts)} macros={macros}")
+    if not ingredient_dicts:
+        return "I couldn't save that recipe because no ingredients were provided. Please include the ingredient list."
+    try:
+        database.save_recipe(
+            home_id=home_id,
+            user_id=user_id,
+            name=name,
+            description=description,
+            servings=servings,
+            prep_time_minutes=prep_time_minutes,
+            cook_time_minutes=cook_time_minutes,
+            ingredients=ingredient_dicts,
+            steps=steps or [],
+            cuisine=cuisine,
+            tags=tags,
+            macros=macros,
+            source_session_id=session_id,
+        )
+        return f"Recipe '{name}' has been saved to your recipe library."
+    except Exception as e:
+        print(f"[save_recipe] failed: {e.__class__.__name__}: {e}")
+        return "Sorry, I couldn't save that recipe right now. Please try again."
+
+
+ALL_TOOLS = [get_user_profile, save_preference,
+             substitute_ingredient, generate_meal_plan, save_recipe]
 
 
 def get_tools(enabled: list[str]) -> list:

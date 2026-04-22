@@ -1,20 +1,9 @@
 """
 schemas.py — Pydantic models for all FastAPI request/response bodies.
 
-Models defined here:
-- ChatRequest: POST /chat — user_id, session_id, message, model, temperature,
-                            top_p, max_tokens, enabled_tools, personality
-- ChatResponse: response with assistant text, checkpoint_id, tokens_used, model_used
-- EditRequest: POST /edit — checkpoint_id, new_message, user_id, model, temperature
-- FeedbackRequest: POST /feedback — user_id, recipe_name, rating, ingredients, cuisine,
-                                    model_used
-- UserProfile: GET /users/{id} response — id, name, diet,
-               disliked_ingredients, favorite_cuisines
-- ModelListResponse: GET /models — cloud models + detected local Ollama models
-- HistoryMessage: single message in GET /history/{session_id}
-- HistoryResponse: list of HistoryMessage
-
-All fields use snake_case. Optional fields default to None unless noted.
+The caller is always resolved from the Supabase JWT (see auth.py); request
+bodies never carry user_id. home_id is required so the backend knows which
+household scope to act in.
 """
 
 from pydantic import BaseModel, field_validator
@@ -22,16 +11,37 @@ from typing import Optional
 
 
 class ChatRequest(BaseModel):
-    user_id: str
+    home_id: str
     session_id: str
     message: str
-    model: str = "gpt-4o-mini"
-    temperature: float = 0.7
-    top_p: float = 1.0
-    max_tokens: int = 1024
-    enabled_tools: list[str] = ["search_recipes", "get_user_profile", "save_preference",
-                                 "substitute_ingredient", "generate_meal_plan"]
-    personality: str = "friendly"
+
+
+class RecipeIngredient(BaseModel):
+    item: str
+    amount: str
+    unit: str
+
+
+class StructuredRecipe(BaseModel):
+    name: str
+    description: str
+    servings: int
+    prep_time_minutes: int
+    cook_time_minutes: int
+    ingredients: list[RecipeIngredient]
+    steps: list[str]
+    cuisine: str
+    tags: list[str]
+    calories_kcal: Optional[int] = None
+    protein_g: Optional[int] = None
+    carbs_g: Optional[int] = None
+    fat_g: Optional[int] = None
+
+
+class SavedRecipeOut(StructuredRecipe):
+    id: str
+    image_url: Optional[str] = None
+    created_at: str
 
 
 class ChatResponse(BaseModel):
@@ -39,21 +49,18 @@ class ChatResponse(BaseModel):
     checkpoint_id: str
     tokens_used: Optional[int] = None
     model_used: str
+    recipe: Optional[StructuredRecipe] = None
 
 
 class EditRequest(BaseModel):
     checkpoint_id: str
     new_message: str
-    user_id: str
+    home_id: str
     session_id: str
-    model: str = "gpt-4o-mini"
-    temperature: float = 0.7
-    top_p: float = 1.0
-    max_tokens: int = 1024
 
 
 class FeedbackRequest(BaseModel):
-    user_id: str
+    home_id: str
     recipe_name: str
     rating: int  # 1 = dislike, 5 = like
     ingredients: list[str] = []
@@ -68,12 +75,38 @@ class FeedbackRequest(BaseModel):
         return v
 
 
+_VALID_MEASUREMENT_SYSTEMS = {"metric", "imperial"}
+
+
 class UserProfile(BaseModel):
     id: str
     name: str
     diet: list[str] = []
     disliked_ingredients: list[str] = []
     favorite_cuisines: list[str] = []
+    liked_ingredients: list[str] = []
+    allergies: list[str] = []
+    cooking_skill_level: Optional[str] = None
+    adventurousness: Optional[int] = None
+    measurement_system: Optional[str] = None
+
+
+class PreferencesUpdate(BaseModel):
+    diet: Optional[list[str]] = None
+    disliked_ingredients: Optional[list[str]] = None
+    favorite_cuisines: Optional[list[str]] = None
+    liked_ingredients: Optional[list[str]] = None
+    allergies: Optional[list[str]] = None
+    cooking_skill_level: Optional[str] = None
+    adventurousness: Optional[int] = None
+    measurement_system: Optional[str] = None
+
+    @field_validator("measurement_system")
+    @classmethod
+    def _measurement_system_valid(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v not in _VALID_MEASUREMENT_SYSTEMS:
+            raise ValueError("measurement_system must be 'metric' or 'imperial'")
+        return v
 
 
 class UserSummary(BaseModel):
@@ -118,3 +151,139 @@ class SessionSummary(BaseModel):
 
 class SessionListResponse(BaseModel):
     sessions: list[SessionSummary]
+
+
+# ---------------------------------------------------------------------------
+# Auth / Homes / Invitations
+# ---------------------------------------------------------------------------
+
+class MeResponse(BaseModel):
+    id: str
+    auth_id: str
+    name: str
+    email: str
+    is_admin: bool
+
+
+class HomeCreate(BaseModel):
+    name: str
+
+
+class HomeOut(BaseModel):
+    id: str
+    name: str
+    role: str
+    created_at: Optional[str] = None
+
+
+class HomeListResponse(BaseModel):
+    homes: list[HomeOut]
+
+
+class MemberOut(BaseModel):
+    user_id: str
+    name: str
+    email: Optional[str] = None
+    role: str
+    joined_at: Optional[str] = None
+
+
+class MemberListResponse(BaseModel):
+    members: list[MemberOut]
+
+
+class InvitationCreate(BaseModel):
+    email: str
+    role: str = "member"
+
+    @field_validator("role")
+    @classmethod
+    def _role_valid(cls, v: str) -> str:
+        if v not in ("owner", "admin", "member"):
+            raise ValueError("role must be owner, admin, or member")
+        return v
+
+
+class InvitationOut(BaseModel):
+    id: str
+    token: str
+    home_id: str
+    home_name: Optional[str] = None
+    email: str
+    role: str
+    status: str
+    expires_at: str
+    created_at: str
+    inviter_name: Optional[str] = None
+
+
+class InvitationListResponse(BaseModel):
+    invitations: list[InvitationOut]
+
+
+# ---------------------------------------------------------------------------
+# Admin
+# ---------------------------------------------------------------------------
+
+class AdminHomeOut(BaseModel):
+    id: str
+    name: str
+    created_at: Optional[str] = None
+    member_count: int = 0
+
+
+class AdminHomeListResponse(BaseModel):
+    homes: list[AdminHomeOut]
+
+
+class AdminFeedbackRow(BaseModel):
+    id: str
+    recipe_name: str
+    rating: int
+    cuisine: Optional[str] = None
+    created_at: str
+    user_id: Optional[str] = None
+    user_name: Optional[str] = None
+    home_id: Optional[str] = None
+    home_name: Optional[str] = None
+
+
+class AdminFeedbackListResponse(BaseModel):
+    feedback: list[AdminFeedbackRow]
+
+
+# ---------------------------------------------------------------------------
+# Meal plan entries
+# ---------------------------------------------------------------------------
+
+_VALID_SLOTS = ("breakfast", "lunch", "dinner")
+
+
+class MealPlanEntryCreate(BaseModel):
+    home_id: str
+    plan_date: str  # ISO yyyy-mm-dd
+    slot: str
+    recipe_name: str
+    recipe_content: str
+    source_session_id: Optional[str] = None
+    overwrite: bool = False
+
+    @field_validator("slot")
+    @classmethod
+    def _slot_valid(cls, v: str) -> str:
+        if v not in _VALID_SLOTS:
+            raise ValueError(f"slot must be one of: {', '.join(_VALID_SLOTS)}")
+        return v
+
+
+class MealPlanEntryOut(BaseModel):
+    id: str
+    plan_date: str
+    slot: str
+    recipe_name: str
+    recipe_content: str
+    created_at: str
+
+
+class MealPlanListResponse(BaseModel):
+    entries: list[MealPlanEntryOut]

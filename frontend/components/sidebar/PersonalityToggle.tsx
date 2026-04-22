@@ -1,7 +1,3 @@
-/**
- * PersonalityToggle.tsx — Three-way toggle for agent personality.
- */
-
 "use client";
 
 import type { Personality } from "@/lib/types";
@@ -19,9 +15,9 @@ const OPTIONS: { key: Personality; label: string }[] = [
 
 export default function PersonalityToggle({ value, onChange }: Props) {
   return (
-    <div className="flex flex-col gap-1 text-xs text-neutral-500">
+    <div className="flex flex-col gap-1 text-xs text-on-surface-variant">
       Personality
-      <div className="inline-flex overflow-hidden rounded border border-neutral-300">
+      <div className="inline-flex overflow-hidden rounded-full bg-surface-container-high">
         {OPTIONS.map((o) => {
           const active = o.key === value;
           return (
@@ -31,8 +27,8 @@ export default function PersonalityToggle({ value, onChange }: Props) {
               onClick={() => onChange(o.key)}
               className={`flex-1 px-2 py-1 text-xs transition ${
                 active
-                  ? "bg-neutral-900 text-white"
-                  : "bg-white text-neutral-700 hover:bg-neutral-100"
+                  ? "bg-primary text-on-primary"
+                  : "text-on-surface hover:bg-surface-container-highest"
               }`}
             >
               {o.label}

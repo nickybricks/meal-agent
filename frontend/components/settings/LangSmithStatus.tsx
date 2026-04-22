@@ -1,10 +1,3 @@
-/**
- * LangSmithStatus.tsx — Shows LangSmith tracing configuration status.
- *
- * No dedicated backend endpoint yet; we assume tracing is enabled if the
- * /health endpoint responds, and surface the project name via env var.
- */
-
 "use client";
 
 import { useEffect, useState } from "react";
@@ -30,28 +23,28 @@ export default function LangSmithStatus() {
 
   const badge =
     healthy === null
-      ? { text: "Checking…", cls: "bg-neutral-200 text-neutral-600" }
+      ? { text: "Checking…", cls: "bg-surface-container text-on-surface-variant" }
       : healthy
-        ? { text: "Backend reachable", cls: "bg-green-100 text-green-800" }
-        : { text: "Backend unreachable", cls: "bg-red-100 text-red-700" };
+        ? { text: "Backend reachable", cls: "bg-primary-container text-on-surface" }
+        : { text: "Backend unreachable", cls: "bg-error-container text-brand-error" };
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-3">
       <div className="flex items-center gap-2">
-        <span className={`rounded px-2 py-0.5 text-xs ${badge.cls}`}>
+        <span className={`rounded-full px-3 py-0.5 text-xs ${badge.cls}`}>
           {badge.text}
         </span>
-        <span className="text-xs text-neutral-500">Project: {project}</span>
+        <span className="text-xs text-on-surface-variant">Project: {project}</span>
       </div>
       <a
-        href={`https://smith.langchain.com/projects`}
+        href="https://smith.langchain.com/projects"
         target="_blank"
         rel="noreferrer"
-        className="text-xs text-blue-600 hover:underline"
+        className="text-xs text-tertiary hover:underline"
       >
         Open LangSmith dashboard
       </a>
-      <p className="text-[11px] text-neutral-500">
+      <p className="text-[11px] text-on-surface-variant">
         Tracing is controlled by <code>LANGCHAIN_TRACING_V2</code> in the backend
         <code>.env</code>.
       </p>

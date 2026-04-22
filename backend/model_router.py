@@ -32,18 +32,26 @@ def get_llm(
 
         if provider == "anthropic":
             from langchain_anthropic import ChatAnthropic
-            # Anthropic model IDs use the dated format
             anthropic_ids = {
-                "claude-3-5-haiku":  "claude-3-5-haiku-20241022",
-                "claude-3-5-sonnet": "claude-3-5-sonnet-20241022",
+                "claude-haiku-4-5":  "claude-haiku-4-5-20251001",
+                "claude-sonnet-4-6": "claude-sonnet-4-6",
+                "claude-opus-4-7":   "claude-opus-4-7",
+                # Legacy aliases so any saved sessions keep working
+                "claude-3-5-haiku":  "claude-haiku-4-5-20251001",
+                "claude-3-5-sonnet": "claude-sonnet-4-6",
             }
-            return ChatAnthropic(
-                model=anthropic_ids.get(model_name, model_name),
-                temperature=temperature,
-                max_tokens=max_tokens,
-                top_p=top_p,
-                api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"),
-            )
+            # Anthropic rejects requests with both temperature and top_p set.
+            # Only forward top_p when the caller explicitly changed it from 1.0.
+            anthropic_kwargs: dict = {
+                "model": anthropic_ids.get(model_name, model_name),
+                "max_tokens": max_tokens,
+                "api_key": api_key or os.environ.get("ANTHROPIC_API_KEY"),
+            }
+            if top_p != 1.0:
+                anthropic_kwargs["top_p"] = top_p
+            else:
+                anthropic_kwargs["temperature"] = temperature
+            return ChatAnthropic(**anthropic_kwargs)
 
         if provider == "google":
             from langchain_google_genai import ChatGoogleGenerativeAI

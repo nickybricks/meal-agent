@@ -7,6 +7,10 @@ Public API:
   build_graph()               — called once at startup, returns compiled graph
   run_graph(graph, input, config)    — thin async wrapper for /chat
   rewind_and_run(graph, ...)  — rewinds to checkpoint for /edit
+
+Short-term state (MemorySaver) is per-process: a server restart loses the
+in-memory thread. chat_history and the checkpoint summary row in Supabase
+survive; full LangGraph state rehydration across restarts is future work.
 """
 
 import json
@@ -20,15 +24,17 @@ from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 from langgraph.checkpoint.memory import MemorySaver
 
+import config as cfg
 import database
 import memory as mem
 from model_router import get_llm
-from tools import get_tools
+from tools import ALL_TOOLS, get_tools
 
 
 class AgentState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
     user_id: str
+    home_id: str
     user_profile: dict
     model_name: str
     temperature: float
@@ -38,6 +44,7 @@ class AgentState(TypedDict):
     enabled_tools: list[str]
     current_recipe: dict | None
     feedback_history: list[dict]
+    recent_recipes: list[dict]
     last_checkpoint_id: str
     session_id: str
 
@@ -48,19 +55,23 @@ class AgentState(TypedDict):
 
 def load_profile(state: AgentState) -> dict:
     user_id = state["user_id"]
+    home_id = state.get("home_id") or database.LEGACY_HOME_ID
     try:
         user = database.get_user(user_id) or {"id": user_id, "name": user_id}
-        prefs = database.get_preferences(user_id)
-        feedback = database.get_feedback_history(user_id, limit=20)
+        prefs = database.get_preferences(user_id, home_id)
+        feedback = database.get_feedback_history(user_id, home_id=home_id, limit=20)
+        recent_recipes = database.get_recent_recipe_names(home_id, limit=20)
     except Exception:
         user = {"id": user_id, "name": user_id}
         prefs = {}
         feedback = []
+        recent_recipes = []
 
     profile = {**user, **prefs}
     return {
         "user_profile": profile,
         "feedback_history": feedback,
+        "recent_recipes": recent_recipes,
     }
 
 
@@ -79,6 +90,7 @@ def process_query(state: AgentState) -> dict:
         state.get("user_profile", {}),
         state.get("feedback_history", []),
         state.get("personality", "friendly"),
+        recent_recipes=state.get("recent_recipes", []),
     )
 
     messages = [SystemMessage(content=system_prompt)] + list(state["messages"])
@@ -117,6 +129,7 @@ def generate_response(state: AgentState) -> dict:
         state.get("user_profile", {}),
         state.get("feedback_history", []),
         state.get("personality", "friendly"),
+        recent_recipes=state.get("recent_recipes", []),
     )
 
     messages = [SystemMessage(content=system_prompt)] + list(state["messages"])
@@ -139,6 +152,7 @@ def save_checkpoint_node(state: AgentState, config: RunnableConfig) -> dict:
     try:
         state_summary = json.dumps({
             "user_id": state.get("user_id"),
+            "home_id": state.get("home_id"),
             "model_name": state.get("model_name"),
             "session_id": state.get("session_id"),
             "message_count": len(state.get("messages", [])),
@@ -164,10 +178,7 @@ def build_graph():
 
     builder.add_node("load_profile", load_profile)
     builder.add_node("process_query", process_query)
-    builder.add_node("execute_tools", ToolNode(tools=[
-        *get_tools(["search_recipes", "get_user_profile", "save_preference",
-                    "substitute_ingredient", "generate_meal_plan"])
-    ]))
+    builder.add_node("execute_tools", ToolNode(tools=ALL_TOOLS))
     builder.add_node("generate_response", generate_response)
     builder.add_node("save_checkpoint", save_checkpoint_node)
 
@@ -205,12 +216,71 @@ async def run_graph(graph, state_input: dict, config: dict) -> AgentState:
     return result
 
 
+async def _fallback_run_from_history(
+    graph,
+    checkpoint_id: str,
+    new_message: str,
+    graph_config: dict,
+    overrides: dict | None,
+    session_id: str,
+    home_id: str,
+    user_id: str,
+) -> AgentState:
+    """Rebuild thread from DB history when MemorySaver has been cleared (e.g. server restart)."""
+    rows = database.get_chat_history(session_id, home_id=home_id)
+
+    # Find the assistant message that holds the target checkpoint_id
+    target_idx = next(
+        (i for i, r in enumerate(rows) if r.get("checkpoint_id") == checkpoint_id and r["role"] == "assistant"),
+        None,
+    )
+    if target_idx is None:
+        raise ValueError(f"Checkpoint {checkpoint_id!r} not found in thread history or database.")
+
+    # The user message immediately before the assistant is the one being replaced.
+    # Take everything strictly before that user message as prior context.
+    user_idx = target_idx - 1
+    prior_messages: list[BaseMessage] = []
+    for row in rows[:max(user_idx, 0)]:
+        if row["role"] == "user":
+            prior_messages.append(HumanMessage(content=row["content"]))
+        elif row["role"] == "assistant":
+            prior_messages.append(AIMessage(content=row["content"]))
+
+    state_input: dict = {
+        "messages": prior_messages + [HumanMessage(content=new_message)],
+        "user_id": user_id,
+        "home_id": home_id,
+        "session_id": session_id,
+        "user_profile": {},
+        "model_name": cfg.DEFAULT_MODEL,
+        "temperature": cfg.DEFAULT_TEMPERATURE,
+        "top_p": cfg.DEFAULT_TOP_P,
+        "max_tokens": cfg.DEFAULT_MAX_TOKENS,
+        "personality": cfg.DEFAULT_PERSONALITY,
+        "enabled_tools": cfg.DEFAULT_ENABLED_TOOLS,
+        "current_recipe": None,
+        "feedback_history": [],
+        "recent_recipes": [],
+        "last_checkpoint_id": "",
+    }
+    if overrides:
+        for k, v in overrides.items():
+            if v is not None:
+                state_input[k] = v
+
+    return await run_graph(graph, state_input, graph_config)
+
+
 async def rewind_and_run(
     graph,
     checkpoint_id: str,
     new_message: str,
     config: dict,
     overrides: dict | None = None,
+    session_id: str = "",
+    home_id: str = "",
+    user_id: str = "",
 ) -> AgentState:
     """Fork from a historical checkpoint and re-run with an edited message.
 
@@ -218,6 +288,9 @@ async def rewind_and_run(
     snapshot whose checkpoint_id matches. Calling aupdate_state on that
     snapshot's config creates a new branch (fork), then ainvoke resumes from
     there. `overrides` lets callers swap the model/params for the re-run.
+
+    Falls back to reconstructing the thread from DB history when MemorySaver
+    has been cleared (e.g. after a server restart).
     """
     target = None
     async for snapshot in graph.aget_state_history(config):
@@ -227,6 +300,11 @@ async def rewind_and_run(
             break
 
     if target is None:
+        if session_id:
+            return await _fallback_run_from_history(
+                graph, checkpoint_id, new_message, config, overrides,
+                session_id=session_id, home_id=home_id, user_id=user_id,
+            )
         raise ValueError(f"Checkpoint {checkpoint_id!r} not found in thread history.")
 
     # Replace the most recent HumanMessage by re-emitting one with the same id

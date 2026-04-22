@@ -1,7 +1,3 @@
-/**
- * OllamaStatus.tsx — Shows Ollama connection health and installed models.
- */
-
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
@@ -33,13 +29,13 @@ export default function OllamaStatus() {
   const connected = ollama.length > 0;
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-3">
       <div className="flex items-center gap-2">
         <span
-          className={`inline-block rounded px-2 py-0.5 text-xs ${
+          className={`inline-block rounded-full px-3 py-0.5 text-xs ${
             connected
-              ? "bg-green-100 text-green-800"
-              : "bg-neutral-200 text-neutral-600"
+              ? "bg-primary-container text-on-surface"
+              : "bg-surface-container text-on-surface-variant"
           }`}
         >
           {loading ? "Checking…" : connected ? "Connected" : "Not connected"}
@@ -47,14 +43,14 @@ export default function OllamaStatus() {
         <button
           type="button"
           onClick={refresh}
-          className="rounded border border-neutral-300 bg-white px-2 py-0.5 text-xs text-neutral-700 hover:bg-neutral-50"
+          className="rounded-full bg-surface-container px-3 py-1 text-xs text-on-surface hover:bg-surface-container-high"
         >
           Refresh
         </button>
       </div>
-      {error && <div className="text-xs text-red-600">{error}</div>}
+      {error && <div className="text-xs text-brand-error">{error}</div>}
       {connected && (
-        <ul className="list-disc pl-4 text-xs text-neutral-700">
+        <ul className="list-disc pl-4 text-xs text-on-surface-variant">
           {ollama.map((m) => (
             <li key={m.id}>{m.display}</li>
           ))}

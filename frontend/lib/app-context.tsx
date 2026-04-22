@@ -15,16 +15,7 @@ import {
   useMemo,
   useState,
 } from "react";
-import type { Personality } from "./types";
 import { STORAGE_KEYS, readJSON, writeJSON } from "./storage";
-
-const DEFAULT_TOOLS = [
-  "search_recipes",
-  "get_user_profile",
-  "save_preference",
-  "substitute_ingredient",
-  "generate_meal_plan",
-];
 
 export interface SessionStats {
   totalTokens: number;
@@ -34,25 +25,13 @@ export interface SessionStats {
 }
 
 export interface AppSettings {
-  userId: string;
+  homeId: string;
   sessionId: string;
-  model: string;
-  personality: Personality;
-  temperature: number;
-  topP: number;
-  maxTokens: number;
-  enabledTools: string[];
 }
 
 export interface AppSettingsContextValue extends AppSettings {
-  setUserId: (id: string) => void;
+  setHomeId: (id: string) => void;
   setSessionId: (id: string) => void;
-  setModel: (m: string) => void;
-  setPersonality: (p: Personality) => void;
-  setTemperature: (t: number) => void;
-  setTopP: (t: number) => void;
-  setMaxTokens: (t: number) => void;
-  setEnabledTools: (tools: string[]) => void;
   newSession: () => void;
   stats: SessionStats;
   updateStats: (patch: Partial<SessionStats>) => void;
@@ -60,14 +39,8 @@ export interface AppSettingsContextValue extends AppSettings {
 }
 
 const defaults: AppSettings = {
-  userId: "",
+  homeId: "",
   sessionId: "",
-  model: "gpt-4o-mini",
-  personality: "friendly",
-  temperature: 0.7,
-  topP: 1.0,
-  maxTokens: 1024,
-  enabledTools: DEFAULT_TOOLS,
 };
 
 const AppSettingsContext = createContext<AppSettingsContextValue | null>(null);
@@ -97,14 +70,8 @@ export function AppSettingsProvider({
 
   useEffect(() => {
     const hydrated: AppSettings = {
-      userId: readJSON(STORAGE_KEYS.userId, ""),
+      homeId: readJSON(STORAGE_KEYS.homeId, ""),
       sessionId: readJSON(STORAGE_KEYS.sessionId, "") || randomId(),
-      model: readJSON(STORAGE_KEYS.model, defaults.model),
-      personality: readJSON(STORAGE_KEYS.personality, defaults.personality),
-      temperature: readJSON(STORAGE_KEYS.temperature, defaults.temperature),
-      topP: readJSON(STORAGE_KEYS.topP, defaults.topP),
-      maxTokens: readJSON(STORAGE_KEYS.maxTokens, defaults.maxTokens),
-      enabledTools: readJSON(STORAGE_KEYS.enabledTools, defaults.enabledTools),
     };
     writeJSON(STORAGE_KEYS.sessionId, hydrated.sessionId);
     setState(hydrated);
@@ -122,14 +89,8 @@ export function AppSettingsProvider({
   const value = useMemo<AppSettingsContextValue>(
     () => ({
       ...state,
-      setUserId: (v) => update("userId", v, STORAGE_KEYS.userId),
+      setHomeId: (v) => update("homeId", v, STORAGE_KEYS.homeId),
       setSessionId: (v) => update("sessionId", v, STORAGE_KEYS.sessionId),
-      setModel: (v) => update("model", v, STORAGE_KEYS.model),
-      setPersonality: (v) => update("personality", v, STORAGE_KEYS.personality),
-      setTemperature: (v) => update("temperature", v, STORAGE_KEYS.temperature),
-      setTopP: (v) => update("topP", v, STORAGE_KEYS.topP),
-      setMaxTokens: (v) => update("maxTokens", v, STORAGE_KEYS.maxTokens),
-      setEnabledTools: (v) => update("enabledTools", v, STORAGE_KEYS.enabledTools),
       newSession: () => {
         const id = randomId();
         update("sessionId", id, STORAGE_KEYS.sessionId);

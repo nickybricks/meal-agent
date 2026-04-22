@@ -7,23 +7,29 @@ Defines:
 - DEFAULT_MODEL: fallback model when none is specified
 - DEFAULT_TEMPERATURE, DEFAULT_MAX_TOKENS, DEFAULT_TOP_P: LLM parameter defaults
 - PERSONALITY_PROMPTS: dict mapping personality key -> system prompt prefix
-- THEMEALDB_BASE_URL: base URL for TheMealDB API calls
 
 Nothing here makes network calls — pure constants.
 """
-
-THEMEALDB_BASE_URL = "https://themealdb.com/api/json/v1/1"
 
 DEFAULT_MODEL = "gpt-4o-mini"
 DEFAULT_TEMPERATURE = 0.7
 DEFAULT_MAX_TOKENS = 1024
 DEFAULT_TOP_P = 1.0
+DEFAULT_PERSONALITY = "friendly"
+DEFAULT_ENABLED_TOOLS = [
+    "get_user_profile",
+    "save_preference",
+    "substitute_ingredient",
+    "generate_meal_plan",
+    "save_recipe",
+]
 
 CLOUD_MODELS = {
     "gpt-4o-mini":        {"provider": "openai",    "display": "GPT-4o Mini"},
     "gpt-4o":             {"provider": "openai",    "display": "GPT-4o"},
-    "claude-3-5-haiku":   {"provider": "anthropic", "display": "Claude 3.5 Haiku"},
-    "claude-3-5-sonnet":  {"provider": "anthropic", "display": "Claude 3.5 Sonnet"},
+    "claude-haiku-4-5":   {"provider": "anthropic", "display": "Claude Haiku 4.5"},
+    "claude-sonnet-4-6":  {"provider": "anthropic", "display": "Claude Sonnet 4.6"},
+    "claude-opus-4-7":    {"provider": "anthropic", "display": "Claude Opus 4.7"},
     "gemini-2.0-flash":   {"provider": "google",    "display": "Gemini 2.0 Flash"},
     "gemini-1.5-pro":     {"provider": "google",    "display": "Gemini 1.5 Pro"},
 }

@@ -1,7 +1,3 @@
-/**
- * ChatInput.tsx — Message composition bar at the bottom of ChatWindow.
- */
-
 "use client";
 
 import { useRef, useState, KeyboardEvent } from "react";
@@ -41,7 +37,8 @@ export default function ChatInput({ onSend, disabled }: Props) {
   };
 
   return (
-    <div className="flex items-end gap-2 border-t border-neutral-200 bg-white p-3">
+    <div className="bg-surface-container-low px-4 py-4">
+    <div className="mx-auto flex w-full max-w-3xl items-end gap-3">
       <textarea
         ref={textareaRef}
         value={text}
@@ -49,17 +46,18 @@ export default function ChatInput({ onSend, disabled }: Props) {
         onKeyDown={handleKeyDown}
         placeholder="What should we cook today?"
         rows={1}
-        className="flex-1 resize-none rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm leading-6 focus:border-neutral-400 focus:outline-none"
+        className="flex-1 resize-none rounded-card bg-surface-container-highest px-4 py-3 text-sm leading-6 text-on-surface placeholder:text-on-surface-variant focus:bg-surface-bright focus:outline-none"
         disabled={disabled}
       />
       <button
         type="button"
         onClick={submit}
         disabled={disabled || !text.trim()}
-        className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:bg-neutral-400"
+        className="rounded-full bg-primary px-5 py-3 text-sm font-medium text-on-primary disabled:opacity-40"
       >
         {disabled ? "…" : "Send"}
       </button>
+    </div>
     </div>
   );
 }

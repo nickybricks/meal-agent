@@ -1,7 +1,3 @@
-/**
- * EditPrompt.tsx — Inline edit form that replaces a user message bubble.
- */
-
 "use client";
 
 import { useState } from "react";
@@ -22,19 +18,19 @@ export default function EditPrompt({
   const [text, setText] = useState(originalText);
 
   return (
-    <div className="flex max-w-[80%] flex-col gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3">
+    <div className="w-full flex-col gap-3 rounded-card bg-surface-container-high p-4">
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
-        rows={3}
-        className="w-full resize-y rounded border border-amber-300 bg-white p-2 text-sm focus:border-amber-500 focus:outline-none"
+        rows={4}
+        className="mb-3 w-full resize-y rounded-[1rem] bg-surface-container-highest p-3 text-sm text-on-surface focus:bg-surface-bright focus:outline-none"
         autoFocus
       />
       <div className="flex justify-end gap-2">
         <button
           type="button"
           onClick={onCancel}
-          className="rounded border border-neutral-300 bg-white px-3 py-1 text-xs text-neutral-700 hover:bg-neutral-50"
+          className="rounded-full bg-surface-container px-4 py-1.5 text-xs text-on-surface hover:bg-surface-container-highest"
         >
           Cancel
         </button>
@@ -44,9 +40,9 @@ export default function EditPrompt({
             const trimmed = text.trim();
             if (trimmed) onConfirm(checkpointId, trimmed);
           }}
-          className="rounded bg-neutral-900 px-3 py-1 text-xs font-medium text-white hover:bg-neutral-700"
+          className="rounded-full bg-primary px-4 py-1.5 text-xs font-medium text-on-primary"
         >
-          Rerun
+          Save
         </button>
       </div>
     </div>

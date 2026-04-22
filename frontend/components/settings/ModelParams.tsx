@@ -1,13 +1,11 @@
-/**
- * ModelParams.tsx — Sliders for LLM generation parameters.
- */
-
 "use client";
 
 interface Props {
   temperature: number;
   topP: number;
   maxTokens: number;
+  disableTopP?: boolean;
+  disableTopPReason?: string;
   onChange: (params: { temperature: number; topP: number; maxTokens: number }) => void;
 }
 
@@ -19,6 +17,8 @@ function Slider({
   step,
   onChange,
   format,
+  disabled,
+  disabledHint,
 }: {
   label: string;
   value: number;
@@ -27,12 +27,14 @@ function Slider({
   step: number;
   onChange: (v: number) => void;
   format?: (v: number) => string;
+  disabled?: boolean;
+  disabledHint?: string;
 }) {
   return (
-    <div className="flex flex-col gap-1">
-      <div className="flex justify-between text-sm text-neutral-700">
+    <div className={`flex flex-col gap-1 ${disabled ? "opacity-40" : ""}`}>
+      <div className="flex justify-between text-sm text-on-surface">
         <span>{label}</span>
-        <span className="font-mono text-xs text-neutral-500">
+        <span className="font-mono text-xs text-on-surface-variant">
           {format ? format(value) : value}
         </span>
       </div>
@@ -42,9 +44,13 @@ function Slider({
         max={max}
         step={step}
         value={value}
+        disabled={disabled}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="w-full"
+        className={`w-full ${disabled ? "cursor-not-allowed" : ""}`}
       />
+      {disabled && disabledHint ? (
+        <span className="text-xs text-on-surface-variant">{disabledHint}</span>
+      ) : null}
     </div>
   );
 }
@@ -53,15 +59,17 @@ export default function ModelParams({
   temperature,
   topP,
   maxTokens,
+  disableTopP,
+  disableTopPReason,
   onChange,
 }: Props) {
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-4">
       <Slider
         label="Temperature"
         value={temperature}
         min={0}
-        max={2}
+        max={1}
         step={0.1}
         onChange={(v) => onChange({ temperature: v, topP, maxTokens })}
         format={(v) => v.toFixed(1)}
@@ -74,6 +82,8 @@ export default function ModelParams({
         step={0.05}
         onChange={(v) => onChange({ temperature, topP: v, maxTokens })}
         format={(v) => v.toFixed(2)}
+        disabled={disableTopP}
+        disabledHint={disableTopPReason}
       />
       <Slider
         label="Max tokens"

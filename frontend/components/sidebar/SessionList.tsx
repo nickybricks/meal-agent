@@ -1,7 +1,3 @@
-/**
- * SessionList.tsx — Recent chat sessions for the current user.
- */
-
 "use client";
 
 import type { SessionSummary } from "@/lib/types";
@@ -25,15 +21,15 @@ export default function SessionList({
   onNew,
 }: Props) {
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-2 border-t border-neutral-200 pt-3">
+    <div className="flex min-h-0 flex-1 flex-col gap-2 pt-3">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+        <span className="text-xs font-medium uppercase tracking-wide text-on-surface-variant">
           Recent chats
         </span>
         <button
           type="button"
           onClick={onNew}
-          className="rounded px-2 py-0.5 text-xs text-neutral-700 hover:bg-neutral-200"
+          className="rounded-full bg-surface-container px-2.5 py-0.5 text-xs text-on-surface-variant transition hover:bg-surface-container-high"
           title="Start a new chat"
         >
           + New
@@ -41,7 +37,7 @@ export default function SessionList({
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {sessions.length === 0 ? (
-          <p className="px-2 py-1 text-xs text-neutral-400">No chats yet.</p>
+          <p className="px-2 py-1 text-xs text-on-surface-variant">No chats yet.</p>
         ) : (
           <ul className="flex flex-col gap-0.5">
             {sessions.map((s) => {
@@ -52,10 +48,10 @@ export default function SessionList({
                   <button
                     type="button"
                     onClick={() => onSelect(s.sessionId)}
-                    className={`w-full truncate rounded px-2 py-1 text-left text-xs ${
+                    className={`w-full truncate rounded-full px-3 py-1 text-left text-xs transition ${
                       active
-                        ? "bg-neutral-900 text-white"
-                        : "text-neutral-700 hover:bg-neutral-200"
+                        ? "bg-primary text-on-primary"
+                        : "text-on-surface-variant hover:bg-surface-container-high"
                     }`}
                     title={s.title || s.sessionId}
                   >

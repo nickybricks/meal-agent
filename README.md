@@ -12,7 +12,6 @@ A conversational AI agent that acts as a personal chef assistant for daily meal 
 - **Session list** — sidebar shows recent chat sessions; switch or start new sessions
 - **Persistent settings** — model, personality, and tool toggles survive page reloads via localStorage
 - **Personality toggle** — Friendly / Professional / Concise
-- **Recipe lookups** — TheMealDB integration (free, no key required)
 - **Tracing** — every run traced through LangSmith
 
 ## Tech Stack
@@ -22,15 +21,13 @@ A conversational AI agent that acts as a personal chef assistant for daily meal 
 - **Agent:** LangGraph + LangChain
 - **Database:** Supabase (Postgres)
 - **Observability:** LangSmith
-- **Recipes:** TheMealDB API
 
 ## Agent Tools
 
-1. `search_recipes` — TheMealDB lookup
-2. `get_user_profile` — load preferences from Supabase
-3. `save_preference` — persist feedback to Supabase
-4. `substitute_ingredient` — LLM-powered ingredient swaps
-5. `generate_meal_plan` — weekly plan via LLM + TheMealDB
+1. `get_user_profile` — load preferences from Supabase
+2. `save_preference` — persist feedback to Supabase
+3. `substitute_ingredient` — LLM-powered ingredient swaps
+4. `generate_meal_plan` — weekly plan via LLM
 
 Each tool is independently toggleable in settings.
 
@@ -80,13 +77,22 @@ ANTHROPIC_API_KEY=
 GOOGLE_API_KEY=
 SUPABASE_URL=
 SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+ADMIN_EMAIL=
+ALLOWED_ORIGINS=
+ENV=dev
 LANGCHAIN_TRACING_V2=true
 LANGCHAIN_API_KEY=
 LANGCHAIN_PROJECT=meal-agent
 OLLAMA_HOST=http://localhost:11434
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+NEXT_PUBLIC_API_URL=
 ```
 
 You only need keys for the providers you actually want to use. Ollama is optional (for local models).
+
+`SUPABASE_SERVICE_ROLE_KEY` is required by the backend to bypass RLS. `ADMIN_EMAIL` grants the `/admin` page to a single account. `ALLOWED_ORIGINS` is a comma-separated list of origins accepted by CORS when `ENV != dev` (e.g. `https://your-app.vercel.app`); when `ENV=dev`, the backend additionally allows the local LAN regex. The three `NEXT_PUBLIC_*` vars are read by the Next.js frontend and should be set in `frontend/.env.local` (or in the Vercel project).
 
 ### 3. Backend
 
@@ -108,6 +114,48 @@ npm run dev
 ```
 
 Frontend runs on `http://localhost:3000`.
+
+## Deploy
+
+The frontend is designed for Vercel, the backend for Railway (or any Docker host).
+
+### Frontend → Vercel
+
+1. From the Vercel dashboard, import the repo and set the **Root Directory** to `frontend/`. The bundled [frontend/vercel.json](frontend/vercel.json) pins the Next.js framework preset.
+2. Set these environment variables in the Vercel project:
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `NEXT_PUBLIC_API_URL` — the Railway URL of the backend (e.g. `https://meal-agent-api.up.railway.app`)
+3. Deploy. Note the production URL — you'll need it for `ALLOWED_ORIGINS` below.
+
+### Backend → Railway
+
+The backend ships with both a [backend/Dockerfile](backend/Dockerfile) and a [backend/Procfile](backend/Procfile); Railway will use whichever builder you pick.
+
+1. Create a new Railway service from the repo. If using the Docker builder, set the build context to the repo root and point it at `backend/Dockerfile`. If using Nixpacks/Buildpacks, set the root to `backend/` so the Procfile is picked up.
+2. Set these environment variables on the service:
+   - `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GOOGLE_API_KEY` (whichever you use)
+   - `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
+   - `ADMIN_EMAIL` — the email that should see `/admin`
+   - `ALLOWED_ORIGINS` — the Vercel production URL (comma-separated if more than one)
+   - `ENV=production`
+   - `LANGCHAIN_TRACING_V2`, `LANGCHAIN_API_KEY`, `LANGCHAIN_PROJECT` (optional)
+3. Deploy. Railway injects `PORT`; both the Dockerfile CMD and the Procfile bind to it.
+
+### Supabase
+
+Before either deploy is useful, apply the migrations to your Supabase project (SQL editor):
+
+1. `supabase_schema.sql` — base tables
+2. `supabase_migration_diet.sql` — dietary prefs columns
+3. `002_auth_homes.sql` — auth, homes, invitations, RLS, and the `auth.users` trigger
+4. `003_meal_plan.sql` — meal plan tables
+5. `004_saved_recipes.sql` — saved recipes
+6. `005_expanded_preferences.sql` — expanded user preferences
+7. `006_measurement_system.sql` — measurement system preference
+8. `007_recipe_macros.sql` — recipe macro tracking
+
+Apply these SQL files via the Supabase SQL editor in order.
 
 ## API Endpoints
 

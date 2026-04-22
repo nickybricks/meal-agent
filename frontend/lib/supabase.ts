@@ -1,22 +1,12 @@
 /**
- * supabase.ts — Supabase browser client for direct frontend queries.
+ * supabase.ts — Re-exports the browser Supabase client.
  *
- * Used for:
- * - Reading/writing user preferences from the profile page (bypasses the agent)
- * - Clearing feedback history from the settings page
- * - Real-time subscriptions if added in a later phase
- *
- * Credentials come from:
- *   NEXT_PUBLIC_SUPABASE_URL
- *   NEXT_PUBLIC_SUPABASE_ANON_KEY
- *
- * The anon key is safe to expose in the browser — Supabase Row Level Security
- * (RLS) policies on the database restrict what it can read/write.
+ * Keep existing callers working (profile page direct reads, settings helpers)
+ * while new code imports from supabase-browser.ts directly.
  */
 
-import { createClient } from "@supabase/supabase-js";
+export { getSupabaseBrowserClient as default, getSupabaseBrowserClient } from "./supabase-browser";
+export { getSupabaseBrowserClient as supabaseClient } from "./supabase-browser";
+import { getSupabaseBrowserClient } from "./supabase-browser";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = getSupabaseBrowserClient();
