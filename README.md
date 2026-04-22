@@ -34,6 +34,22 @@ Melagent is a conversational AI agent that helps households plan meals, discover
 | Auth          | Supabase Auth (JWT)                     |
 | Observability | LangSmith                               |
 
+## Why This Stack
+
+**Next.js 14** — App Router gives us server components and file-based routing out of the box, reducing boilerplate for a multi-page app (chat, profile, meal plan, settings) while keeping the bundle lean with React Server Components.
+
+**FastAPI** — Async-first Python framework that pairs naturally with LangGraph's async graph execution. Auto-generated OpenAPI docs and Pydantic integration mean the request/response contract is always in sync with the code.
+
+**LangGraph + LangChain** — LangGraph's stateful graph model maps directly to the agent's flow (load profile → reason → use tools → reply → await feedback). Checkpoints let us rewind to any node when the user edits a past message, which would be complex to implement from scratch.
+
+**Supabase** — Managed Postgres with a built-in auth layer (JWT, row-level security) and a JavaScript + Python client. Avoids running a separate auth service while keeping data in a real relational database — important for multi-user households where preferences and feedback need to be scoped per user.
+
+**Docker** — Both the FastAPI backend and the Next.js frontend are containerised so the full stack runs identically on a developer's laptop and in production. A single `docker-compose up` replaces a multi-step manual setup, and the same images are promoted to Railway without rebuild.
+
+**Railway** — Container-native PaaS that deploys directly from a `Dockerfile` (or `docker-compose.yml`) on every push to `main`. It provisions a public HTTPS URL, injects environment variables, and handles rolling restarts automatically — no Kubernetes config or Nginx setup required. Chosen over Vercel (frontend-only) and raw EC2/GCP (too much ops overhead for a project at this stage).
+
+**LangSmith** — Drop-in tracing for every LangGraph run. Captures inputs, outputs, intermediate tool calls, and latency at each node with zero extra code, which is essential for debugging prompt regressions and measuring how preference feedback affects response quality over time.
+
 ## Future Plans
 
 - [ ] **AI recipe image generation** — Let users generate AI-created images for any recipe (saved or agent-suggested) so the recipe library feels visual and appetising
