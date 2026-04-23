@@ -8,10 +8,11 @@ import { useAppSettings } from "@/lib/app-context";
 import {
   acceptInvitation,
   createHome,
+  listHomes,
   listMyInvitations,
   updatePreferences,
 } from "@/lib/api";
-import type { Invitation } from "@/lib/types";
+import type { Home, Invitation } from "@/lib/types";
 
 const DIET_OPTIONS = ["vegetarian", "vegan", "pescatarian", "gluten-free", "dairy-free", "keto"];
 const SKILL_OPTIONS = [
@@ -19,12 +20,8 @@ const SKILL_OPTIONS = [
   { id: "intermediate", label: "Intermediate — standard techniques, a bit more complex" },
   { id: "advanced", label: "Advanced — comfortable with complex recipes" },
 ];
-const MODEL_OPTIONS = [
-  { id: "gpt-4o-mini", label: "GPT-4o mini (fast, cheap)" },
-  { id: "claude-3-5-haiku-latest", label: "Claude 3.5 Haiku" },
-  { id: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
-];
-const TOTAL_STEPS = 8;
+const DEFAULT_MODEL = "gpt-4o-mini";
+const TOTAL_STEPS = 7;
 
 // Inline tag input used for multiple preference steps
 function TagInput({
@@ -97,6 +94,7 @@ export default function OnboardingPage() {
   const [name, setName] = useState("");
   const [homeName, setHomeName] = useState("My Kitchen");
   const [localHomeId, setLocalHomeId] = useState("");
+  const [existingHomes, setExistingHomes] = useState<Home[]>([]);
   const [invites, setInvites] = useState<Invitation[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -109,7 +107,6 @@ export default function OnboardingPage() {
   const [cuisines, setCuisines] = useState<string[]>([]);
   const [skillLevel, setSkillLevel] = useState("");
   const [adventurousness, setAdventurousness] = useState(0);
-  const [defaultModel, setDefaultModel] = useState("gpt-4o-mini");
 
   useEffect(() => {
     if (loading) return;
@@ -119,9 +116,22 @@ export default function OnboardingPage() {
     }
     const meta = (user.user_metadata ?? {}) as Record<string, unknown>;
     setName((meta.name as string) ?? "");
-    listMyInvitations()
-      .then(setInvites)
-      .catch(() => setInvites([]));
+    Promise.all([listHomes().catch(() => [] as Home[]), listMyInvitations().catch(() => [] as Invitation[])])
+      .then(([homes, invitations]) => {
+        setExistingHomes(homes);
+        setInvites(invitations);
+
+        if (homes.length > 0) {
+          const primaryHomeId = homes[0].id;
+          setHomeId(primaryHomeId);
+          setLocalHomeId(primaryHomeId);
+          setStep(3);
+        }
+      })
+      .catch(() => {
+        setExistingHomes([]);
+        setInvites([]);
+      });
   }, [user, loading, router]);
 
   async function handleStep1(e: FormEvent) {
@@ -171,8 +181,7 @@ export default function OnboardingPage() {
     );
   }
 
-  async function handleFinish(e: FormEvent) {
-    e.preventDefault();
+  async function finishOnboarding() {
     setError(null);
     setBusy(true);
     try {
@@ -188,16 +197,21 @@ export default function OnboardingPage() {
         });
       }
       const { error: err } = await supabase.auth.updateUser({
-        data: { default_model: defaultModel, onboarded: true },
+        data: { default_model: DEFAULT_MODEL, onboarded: true },
       });
       if (err) return setError(err.message);
-      router.replace("/");
-      router.refresh();
+      await supabase.auth.refreshSession();
+      window.location.assign("/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't save preferences");
     } finally {
       setBusy(false);
     }
+  }
+
+  async function handleFinish(e: FormEvent) {
+    e.preventDefault();
+    await finishOnboarding();
   }
 
   if (loading || !user) return null;
@@ -247,6 +261,33 @@ export default function OnboardingPage() {
           <div className="space-y-6">
             <h1 className="text-xl font-semibold text-on-surface">Your kitchen</h1>
 
+            {existingHomes.length > 0 && (
+              <section className="space-y-3 rounded-card bg-surface-container p-4">
+                <h2 className="text-sm font-semibold text-on-surface">You're already in a home</h2>
+                <ul className="space-y-2">
+                  {existingHomes.map((home) => (
+                    <li key={home.id} className="flex items-center justify-between gap-3 text-sm">
+                      <div>
+                        <div className="font-medium text-on-surface">{home.name}</div>
+                        <div className="text-xs text-on-surface-variant">role: {home.role}</div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setHomeId(home.id);
+                          setLocalHomeId(home.id);
+                          setStep(3);
+                        }}
+                        className="rounded-full bg-primary px-4 py-1.5 text-xs text-on-primary"
+                      >
+                        Continue
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
             {invites.length > 0 && (
               <section className="space-y-3 rounded-card bg-surface-container p-4">
                 <h2 className="text-sm font-semibold text-on-surface">Pending invitations</h2>
@@ -275,7 +316,9 @@ export default function OnboardingPage() {
 
             <form onSubmit={handleCreateHome} className="space-y-3">
               <h2 className="text-sm font-semibold text-on-surface">
-                {invites.length > 0 ? "Or create your own" : "Create your home"}
+                {existingHomes.length > 0 || invites.length > 0
+                  ? "Or create your own"
+                  : "Create your home"}
               </h2>
               <input
                 required
@@ -457,7 +500,7 @@ export default function OnboardingPage() {
 
         {/* Step 7 — Cooking skill & Adventurousness */}
         {step === 7 && (
-          <div className="space-y-6">
+          <form onSubmit={handleFinish} className="space-y-6">
             <h1 className="text-xl font-semibold text-on-surface">
               Tell us about your cooking style
             </h1>
@@ -512,56 +555,24 @@ export default function OnboardingPage() {
 
             <div className="flex gap-3">
               <button
-                type="button"
-                onClick={() => setStep(8)}
+                type="submit"
+                onClick={() => {
+                  setSkillLevel("");
+                  setAdventurousness(0);
+                }}
+                disabled={busy}
                 className="flex-1 rounded-full bg-surface-container py-2.5 text-sm text-on-surface hover:bg-surface-container-high"
               >
-                Skip
+                {busy ? "Saving…" : "Skip"}
               </button>
               <button
-                type="button"
-                onClick={() => setStep(8)}
-                className="flex-1 rounded-full bg-primary py-2.5 text-sm text-on-primary"
+                type="submit"
+                disabled={busy}
+                className="flex-1 rounded-full bg-primary py-2.5 text-sm text-on-primary disabled:opacity-60"
               >
-                Continue
+                {busy ? "Saving…" : "Finish"}
               </button>
             </div>
-          </div>
-        )}
-
-        {/* Step 8 — Default model */}
-        {step === 8 && (
-          <form onSubmit={handleFinish} className="space-y-5">
-            <h1 className="text-xl font-semibold text-on-surface">Pick a default model</h1>
-            <div className="space-y-2">
-              {MODEL_OPTIONS.map((m) => (
-                <label
-                  key={m.id}
-                  className={`flex cursor-pointer items-center gap-3 rounded-card p-3 text-sm transition ${
-                    defaultModel === m.id
-                      ? "bg-primary-container text-on-surface"
-                      : "bg-surface-container text-on-surface hover:bg-surface-container-high"
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="model"
-                    value={m.id}
-                    checked={defaultModel === m.id}
-                    onChange={() => setDefaultModel(m.id)}
-                    className="sr-only"
-                  />
-                  {m.label}
-                </label>
-              ))}
-            </div>
-            <button
-              type="submit"
-              disabled={busy}
-              className="w-full rounded-full bg-primary py-3 text-on-primary disabled:opacity-60"
-            >
-              {busy ? "Saving…" : "Finish"}
-            </button>
           </form>
         )}
       </div>
