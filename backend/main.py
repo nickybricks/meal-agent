@@ -68,7 +68,8 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(title="Recipe Agent API", lifespan=lifespan)
 
-# CORS: allow-list from ALLOWED_ORIGINS env var plus LAN regex in dev.
+# CORS: always honor explicit ALLOWED_ORIGINS and optionally allow LAN hosts
+# in dev for local device testing.
 _LAN_ORIGIN_REGEX = (
     r"^http://("
     r"localhost"
@@ -85,7 +86,7 @@ _allowed = [o.strip() for o in (os.environ.get("ALLOWED_ORIGINS") or "").split("
 _use_credentials = bool(_allowed) or _env == "dev"
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_allowed if _env != "dev" else [],
+    allow_origins=_allowed,
     allow_origin_regex=_LAN_ORIGIN_REGEX if _env == "dev" else None,
     allow_credentials=_use_credentials,
     allow_methods=["*"],

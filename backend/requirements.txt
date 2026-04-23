@@ -1,0 +1,24 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+pydantic==2.9.2
+
+# LangGraph + LangChain
+langgraph==0.2.45
+langchain==0.3.7
+langchain-core==0.3.15
+langchain-openai==0.2.5
+langchain-anthropic==0.2.4
+langchain-google-genai==2.0.4
+langchain-ollama==0.2.0
+langsmith==0.1.136
+
+# Database
+supabase==2.9.1
+
+# HTTP
+httpx==0.27.2
+requests==2.32.3
+
+# Env
+python-dotenv==1.0.1
+python-multipart==0.0.12
